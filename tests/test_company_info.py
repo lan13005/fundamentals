@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from server_utils.company_info import print_company_info
+from server_utils.company_info import print_company_info_impl
 
 @pytest.mark.asyncio
 async def test_print_company_info_success():
@@ -14,7 +14,7 @@ async def test_print_company_info_success():
     mock_company.get_filings.return_value = [mock_filing]
     
     with patch('server_utils.company_info.Company', return_value=mock_company):
-        result = await print_company_info(
+        result = await print_company_info_impl(
             ticker="AAPL",
             form="10-K",
             filing_index=0
@@ -39,7 +39,7 @@ async def test_print_company_info_no_filings():
     mock_company.get_filings.return_value = []
     
     with patch('server_utils.company_info.Company', return_value=mock_company):
-        result = await print_company_info(
+        result = await print_company_info_impl(
             ticker="AAPL",
             form="10-K",
             filing_index=0
@@ -56,7 +56,7 @@ async def test_print_company_info_invalid_index():
     mock_company.get_filings.return_value = [mock_filing]
     
     with patch('server_utils.company_info.Company', return_value=mock_company):
-        result = await print_company_info(
+        result = await print_company_info_impl(
             ticker="AAPL",
             form="10-K",
             filing_index=1  # Index out of range

@@ -13,6 +13,12 @@ The overall goal is to work backwards. Whenever you want to implement a new piec
 
 ## MCP Tool Implementation Guidelines
 
+When code is updated in any of the following files, you must sync the changes:
+- [server.py](mdc:server.py)
+- [server_utils/__init__.py](mdc:server_utils/__init__.py)
+- [tests/test-new-command.py](mdc:tests/test-new-command.py)
+- [server_utils/new-command.py](mdc:server_utils/new-command.py)
+
 ### 1. Tool Structure
 - Use FastMCP's `@tool` decorator to expose Python functions as MCP tools
 - Follow single responsibility principle for each tool
