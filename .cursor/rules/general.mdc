@@ -1,0 +1,75 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Documentation and Development Guidelines
+
+## Project Overview
+This project uses the `edgartools` Python package to extract and analyze financial data from SEC EDGAR filings. The package provides functionality for accessing company financials, insider trades, fund holdings, and XBRL data.
+
+## File Reference Format
+When referencing files in documentation or code:
+- Use the format: `[filename](mdc:path/to/file)`
+- Examples:
+  - For rule references: `[prisma.mdc](mdc:.cursor/rules/prisma.mdc)`
+  - For code references: `[schema.prisma](mdc:prisma/schema.prisma)`
+
+## Core Development Requirements
+
+### Environment and Configuration
+- ✅ Use `python-dotenv` to manage environment variables
+- ✅ Store environment variables in `.env` file
+- ✅ Never commit sensitive environment variables to version control
+- ✅ Use `uv add <package>` to add another package
+
+### Code Documentation Standards
+- ✅ Every Python function must have a docstring
+- ✅ Every Python class must have a docstring
+- ✅ Docstrings should follow Google style format
+- ✅ Include type hints for function parameters and return values
+- ✅ Use `rich` python package to print any output
+
+### Documentation Reading Requirements
+When working with specific components, developers must read the following documentation:
+
+#### FastMCP Documentation
+- ✅ Read all relevant documentation in `docs/fastmcp/fastmcp-*.md` files when making MCP-related updates
+- ✅ Pay special attention to MCP-related code updates
+
+#### EDGAR Tools Documentation
+- ✅ Read all relevant documentation in `docs/edgartools/*` files when making updates that use `edgartools`
+- ✅ Required reading order:
+  1. `docs/edgartools/edgartools.md` - Main documentation and layout
+  2. `docs/edgartools-quick-guide.md` - Quick reference (may be outdated)
+  3. `docs/edgartools-example.py` - Example implementations
+  4. For SEC Form Descriptions see [secforms.md](mdc:docs/edgartools/secforms.md)
+
+## Architecture Guidelines
+
+### MCP Server Architecture
+- ✅ Keep `server.py` clean and minimal
+- ✅ All tool functionality must be:
+  - Imported from appropriate modules
+  - Decorated with `@mcp.tool()` to be an available tool
+  - Organized in logical categories
+
+### Code Organization
+- ✅ Store all tool functionality in the `mcp/` folder
+- ✅ Organize tools into logical modules
+- ✅ Group similar functionality together
+- ✅ Follow consistent naming conventions
+
+## Testing Requirements
+- ✅ All tests must be stored in the `tests/` folder
+- ✅ See testing example in `docs/fastmcp-testing.md` for `fastmcp`
+- ✅ Maintain test coverage for every tool
+
+## Best Practices
+- ✅ Write clear, maintainable code
+- ✅ Follow PEP 8 style guidelines
+- ✅ Use meaningful variable and function names
+- ✅ Add comments for complex logic
+- ✅ Keep functions small and focused
+- ✅ Handle errors appropriately
+- ✅ Log important events and errors

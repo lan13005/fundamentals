@@ -1,0 +1,61 @@
+---
+description: Guidelines for implementing MCP tools in Python using FastMCP and EdgarTools
+globs: 
+alwaysApply: true
+---
+
+# How to implement a tool
+The overall goal is to work backwards. Whenever you want to implement a new piece of code you should:
+1. Understand the overall goal of the code.
+2. Write a test that checks the code is working as expected.
+3. Implement the code following Best Practices in [general.mdc](mdc:.cursor/rules/general.mdc)
+4. Run the test to ensure it passes and reiterate until it does.
+
+## MCP Tool Implementation Guidelines
+
+### 1. Tool Structure
+- Use FastMCP's `@tool` decorator to expose Python functions as MCP tools
+- Follow single responsibility principle for each tool
+- Use type hints for all parameters and return values
+- Implement proper error handling using custom exceptions
+- Use Pydantic models for complex data structures
+
+### 2. Documentation
+- Clear function and parameter documentation using docstrings
+- Include usage examples in docstrings
+- Document any assumptions or limitations
+- Specify error conditions and handling
+- Follow Google-style docstring format
+
+### 3. Security Considerations
+- Validate all input parameters using Pydantic
+- Sanitize any user-provided data
+- Implement proper access controls
+- Follow the principle of least privilege
+- Handle sensitive data appropriately
+- Use environment variables for configuration
+
+### 4. Performance Guidelines
+- Use async/await for I/O-bound operations
+- Implement caching where appropriate
+- Optimize for common use cases
+- Monitor resource usage
+- Implement timeouts for long-running operations
+- Use connection pooling for database operations
+
+### 5. Error Handling
+- New error functionality should be put into [errors.py](mdc:server_utils/errors.py)
+- Use custom exception classes for different failure scenarios
+- Provide meaningful error messages
+- Implement proper logging using Python's logging module
+- Handle edge cases gracefully
+- Include retry mechanisms where appropriate
+- Use context managers for resource cleanup
+
+### 6. Maintenance
+- Include monitoring and logging
+
+# Example MCP Tool and Test
+- Follow the structure of these examples when making modifications to the codebase
+- Example MCP Tool can be found in [server_utils/company_info.py](mdc:server_utils/company_info.py)
+- Corresponding example test can be found in [tests/test_company_info.py](mdc:tests/test_company_info.py)
