@@ -1,8 +1,7 @@
 from typing import Annotated, Dict, Any
 from fastmcp import FastMCP, Context
 from pydantic import Field
-from server_utils.company_info import print_company_info_impl
-from server_utils.tools import get_statement_impl
+from server_utils.tools import get_statement_impl, summarize_financial_report_impl, print_company_info_impl
 
 # All function definitions should be imported. Keep this file clean
 # by only making calls to imported functions for use in the MCP server
@@ -72,6 +71,19 @@ async def print_company_info(
         ValueError: If no filings are found or if there's an error getting company info
     """
     return await print_company_info_impl(ticker, form, filing_index)
+
+@mcp.tool()
+async def summarize_financial_report(
+    ticker: Annotated[str, Field(description="Company stock ticker symbol")],
+    form: Annotated[str, Field(description="SEC filing form type (e.g., '10-K', '10-Q')")],
+    date: Annotated[str, Field(description="Date to retrieve filings for")],
+    statement: Annotated[str, Field(description="Statement to retrieve")],
+    ctx: Annotated[Context, Field(description="Context object")]
+) -> Dict[str, Any]:
+    """
+    Generate a financial report summary using an LLM prompt based on the output of get_statement.
+    """
+    return await summarize_financial_report_impl(ticker, form, date, statement, ctx)
 
 def main():
     """Run the MCP server using fastmcp."""

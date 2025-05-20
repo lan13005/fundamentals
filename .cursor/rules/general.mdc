@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: General guidelines on the scope and requirements for the project.
+globs: **/*
 alwaysApply: true
 ---
 # Project Documentation and Development Guidelines
@@ -34,7 +34,7 @@ When referencing files in documentation or code:
 When working with specific components, developers must read the following documentation:
 
 #### FastMCP Documentation
-- ✅ Read all relevant documentation in `docs/fastmcp/fastmcp-*.md` files when making MCP-related updates
+- ✅ Read all relevant documentation in `docs/fastmcp/fastmcp*.md` files when making MCP-related updates
 - ✅ Pay special attention to MCP-related code updates
 
 #### EDGAR Tools Documentation

@@ -1,6 +1,6 @@
 ---
 description: Guidelines for implementing MCP tools in Python using FastMCP and EdgarTools
-globs: 
+globs: **/*
 alwaysApply: true
 ---
 
