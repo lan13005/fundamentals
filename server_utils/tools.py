@@ -163,7 +163,7 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
     )
 
     # Use the LLM to generate the summary
-    console.log(f"[green]Prompt prepared for LLM. Sending to ctx.prompt...")
+    console.log("[green]Prompt prepared for LLM. Sending to ctx.prompt...")
     summary = await ctx.prompt(prompt)
-    console.log(f"[green]LLM summary received.")
+    console.log("[green]LLM summary received.")
     return {"status": 0, "message": "Success", "summary": summary}

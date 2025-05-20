@@ -206,6 +206,8 @@ async def test_summarize_financial_report_impl_no_statement():
         assert result["summary"] is None
         mock_error.assert_awaited_once()
     console.log("[test] test_summarize_financial_report_impl_no_statement exit")
+    
+############ REAL DATA ############
 
 @pytest.mark.asyncio
 async def test_print_company_info_real_data():
@@ -240,7 +242,7 @@ async def test_get_statement_impl_real_data():
     result = await get_statement_impl(
         ticker="AAPL",
         form="10-K",
-        date="2023-10-27",
+        date="2023-10-27:",
         statement="BalanceSheet",
         ctx=ctx
     )
@@ -265,7 +267,7 @@ async def test_summarize_financial_report_impl_real_data():
     result = await summarize_financial_report_impl(
         ticker="AAPL",
         form="10-K",
-        date="2023-10-27",
+        date="2023-10-27:",
         statement="BalanceSheet",
         ctx=ctx
     )
