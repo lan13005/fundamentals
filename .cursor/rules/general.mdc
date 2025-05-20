@@ -47,6 +47,13 @@ When working with specific components, developers must read the following docume
 
 ## Architecture Guidelines
 
+### Core Files
+The following files form the core of the project and must always be updated together when adding new functionality:
+- [test_integration.py](mdc:tests/test_integration.py): Integration tests for all tools and features
+- [server.py](mdc:fundamentals/server.py): Main FastMCP server implementation and tool registration
+- [tools.py](mdc:fundamentals/tools.py): Tool implementations and business logic
+- [__init__.py](mdc:fundamentals/__init__.py): Package exports and version management
+
 ### MCP Server Architecture
 - ✅ Keep [server.py](mdc:fundamentals/server.py) clean and minimal
 - ✅ All tool functionality must be:
@@ -54,9 +61,11 @@ When working with specific components, developers must read the following docume
   - Decorated with `@mcp.tool()` to be an available tool
   - Organized in logical categories
   - Contain descriptive docstrings
+  - Properly registered in [server.py](mdc:fundamentals/server.py)
+  - Covered by tests in [test_integration.py](mdc:tests/test_integration.py)
 
 ### Code Organization
-- ✅ [tools.py](mdc:fundamentals/tools.py) contains all the avaible tools
+- ✅ [tools.py](mdc:fundamentals/tools.py) contains all the available tools
 - ✅ Follow consistent naming conventions
 
 ## Testing Requirements

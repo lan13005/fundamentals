@@ -1,42 +1,15 @@
 import pytest
-from fundamentals.tools import print_company_info_impl, get_statement_impl, summarize_financial_report_impl
-from fastmcp import Context, FastMCP, Client
+from fundamentals.tools import get_statements_impl, summarize_financial_report_impl
 from rich.console import Console
-from typing import Annotated, Dict, Any
-from pydantic import Field
-import asyncio
 from unittest.mock import patch, AsyncMock
 from edgar.xbrl.statements import StitchedStatement
 
 console = Console()
 
-############ REAL DATA ############
-
-# @pytest.mark.asyncio
-# async def test_print_company_info_real_data():
-#     console.log("[integration] test_print_company_info_real_data entry")
-#     result = await print_company_info_impl(
-#         ticker="AAPL",
-#         form="10-K",
-#         filing_index=0
-#     )
-#     console.log(f"[integration] Result: {result}")
-#     
-#     assert result["status"] == 0
-#     assert result["message"] == "Success"
-#     assert isinstance(result["data"], dict)
-#     assert result["data"]["ticker"] == "AAPL"
-#     assert result["data"]["form"] == "10-K"
-#     assert isinstance(result["data"]["filing_text"], str)
-#     assert len(result["data"]["filing_text"]) > 1000  # Should be a long text
-#     assert isinstance(result["data"]["filing_date"], str)
-#     assert isinstance(result["data"]["accession_number"], str)
-# console.log("[integration] test_print_company_info_real_data exit")
-
 @patch('fastmcp.Context')
 @pytest.mark.asyncio
-async def test_get_statement_impl_real_data(MockContext):
-    console.log("[integration] test_get_statement_impl_real_data entry")
+async def test_get_statements_impl_real_data(MockContext):
+    console.log("[integration] test_get_statements_impl_real_data entry")
     ctx = MockContext()
     ctx.debug = AsyncMock()
     ctx.info = AsyncMock()
@@ -44,7 +17,7 @@ async def test_get_statement_impl_real_data(MockContext):
     ctx.error = AsyncMock()
     ctx.report_progress = AsyncMock()
     ctx.prompt = AsyncMock(return_value={})
-    result = await get_statement_impl(
+    result = await get_statements_impl(
         ticker="AAPL",
         form="10-K",
         date="2023-10-27:",
@@ -59,7 +32,7 @@ async def test_get_statement_impl_real_data(MockContext):
         assert isinstance(stitched_statement, StitchedStatement)
     else:
         assert isinstance(result["error"], str)
-    console.log("[integration] test_get_statement_impl_real_data exit")
+    console.log("[integration] test_get_statements_impl_real_data exit")
 
 @patch('fastmcp.Context')
 @pytest.mark.asyncio

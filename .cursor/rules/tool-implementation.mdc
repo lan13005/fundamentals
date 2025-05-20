@@ -3,13 +3,21 @@ description: Guidelines for implementing MCP tools in Python using FastMCP and E
 globs: **/*
 alwaysApply: true
 ---
-
 # How to implement a tool
 The overall goal is to work backwards. Whenever you want to implement a new piece of code you should:
 1. Understand the overall goal of the code.
-2. Write a test that checks the code is working as expected.
+2. Write a specific test that checks the code is working as expected.
 3. Implement the code following Best Practices in [general.mdc](mdc:.cursor/rules/general.mdc)
-4. Run the test to ensure it passes and reiterate until it does.
+4. Run the specific test to ensure it passes and reiterate until it does.
+
+## Required File Updates
+When adding new functionality, you MUST update all of the following files:
+- [test_integration.py](mdc:tests/test_integration.py): Add or update integration tests for the new functionality.
+- [server.py](mdc:fundamentals/server.py): Register new tools and update server configuration if needed.
+- [tools.py](mdc:fundamentals/tools.py): Implement the new tool functionality.
+- [__init__.py](mdc:fundamentals/__init__.py): Update package exports and version if needed.
+
+All changes must be coordinated across these files to ensure proper functionality and test coverage.
 
 ## MCP Tool Implementation Guidelines
 

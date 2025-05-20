@@ -1,86 +1,27 @@
 import edgar
 from fastmcp import Context
-from typing import Annotated, Dict, Any
-from pydantic import Field, BaseModel
-from edgar import Company
 from dotenv import load_dotenv
 from rich.console import Console
 from edgar.xbrl import XBRLS
+from fundamentals.utility.parsing import reformat_markdown_financial_table
 
 console = Console()
 
 load_dotenv()
 
-class CompanyFilingInfo(BaseModel):
-    """Model for company filing information."""
-    ticker: str
-    form: str
-    filing_text: str
-    filing_date: str
-    accession_number: str
-
-async def print_company_info_impl(
-    ticker: Annotated[str, Field(description="Company stock ticker symbol")],
-    form: Annotated[str, Field(description="SEC filing form type (e.g., '10-K', '10-Q')")],
-    filing_index: Annotated[int, Field(description="Index of the filing to retrieve (0 for most recent)")],
-) -> Dict[str, Any]:
-    console.log(f"[bold blue]Entering print_company_info_impl[/bold blue] with ticker={ticker}, form={form}, filing_index={filing_index}")
-    try:
-        # Get company information
-        company = Company(ticker)
-        console.log(f"[green]Fetched company object for {ticker}")
-        
-        # Get latest filing and return text
-        filings = company.get_filings(form=form)
-        console.log(f"[green]Fetched {len(filings)} filings for {ticker} and form {form}")
-        if not filings:
-            console.log(f"[yellow]No filings found for {ticker}")
-            return {
-                "status": 1,
-                "message": f"No filings found for {ticker}",
-                "data": None
-            }
-            
-        if filing_index >= len(filings):
-            console.log(f"[yellow]Filing index {filing_index} out of range for {ticker} (max {len(filings)-1})")
-            return {
-                "status": 1,
-                "message": f"Filing index {filing_index} out of range (0-{len(filings)-1})",
-                "data": None
-            }
-            
-        filing = filings[filing_index]
-        
-        # Handle filing_date being either a string or a datetime object
-        filing_date = filing.filing_date
-        if hasattr(filing_date, 'strftime'):
-            filing_date = filing_date.strftime("%Y-%m-%d")
-        filing_info = CompanyFilingInfo(
-            ticker=ticker,
-            form=form,
-            filing_text=filing.text(),
-            filing_date=filing_date,
-            accession_number=filing.accession_number
-        )
-        console.log(f"[green]Returning filing info for {ticker} {form} index {filing_index}")
-        return {
-            "status": 0,
-            "message": "Success",
-            "data": filing_info.model_dump()
-        }
-        
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        console.print(f"[red]Error getting company info: {str(e)}\nTraceback:\n{tb}[/red]")
-        return {
-            "status": 1,
-            "message": f"Error getting company info: {str(e)}",
-            "data": None
-        } 
-
-async def get_statement_impl(ticker: str, form: str, date: str, statement_type: str, ctx: Context):
-    console.log(f"[bold blue]Entering get_statement_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}")
+async def get_statements_impl(ticker: str, form: str, date: str, statement_type: str, ctx: Context):
+    """
+    Retrieve a financial statement from SEC EDGAR filings.
+    Args:
+        ticker (str): Company stock ticker symbol.
+        form (str): SEC filing form type.
+        date (str): Date to retrieve filings for.
+        statement_type (str): Statement to retrieve.
+        ctx (Context): Context object for error reporting and progress updates.
+    Returns:
+        Dict[str, Any]: Dictionary containing either an instance of StitchedStatement or an error message.
+    """
+    console.log(f"[bold blue]Entering get_statements_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}")
     available_forms = set([
         "10-Q",
         "10-K",
@@ -88,13 +29,13 @@ async def get_statement_impl(ticker: str, form: str, date: str, statement_type: 
     ])
 
     if form not in available_forms:
-        console.log(f"[yellow]Form {form} is not available")
+        console.log(f"[yellow]Form {form} is not available[/yellow]")
         await ctx.error(f"Form {form} is not available: choose from {available_forms}")
         return {"error": f"Form {form} is not available: choose from {available_forms}"}
     
     available_statements = set([
         "AccountingPolicies",       
-        "BalanceSheet",             
+        "BalanceSheet",
         "BalanceSheetParenthetical",
         "CashFlowStatement",        
         "ComprehensiveIncome",
@@ -105,8 +46,21 @@ async def get_statement_impl(ticker: str, form: str, date: str, statement_type: 
         "StatementOfEquity"
     ])
 
+    # Disallow certain statements as per requirements
+    disallowed_statements = set([
+        "Disclosures", # Limited useful information
+        "CoverPage", # Limited useful information
+        "BalanceSheetParenthetical", # Limited useful information
+        "AccountingPolicies", # Limited useful information
+        "SegmentDisclosure"  # This statement is difficult to parse
+    ])
+    if statement_type in disallowed_statements:
+        console.log(f"[yellow]Statement {statement_type} is not allowed[/yellow]")
+        await ctx.error(f"Statement {statement_type} is not allowed.")
+        return {"error": f"Statement {statement_type} is not allowed."}
+
     if statement_type not in available_statements:
-        console.log(f"[yellow]Statement {statement_type} is not available")
+        console.log(f"[yellow]Statement {statement_type} is not available[/yellow]")
         await ctx.error(f"Statement {statement_type} is not available: choose from {available_statements}")
         return {"error": f"Statement {statement_type} is not available: choose from {available_statements}"}
 
@@ -131,44 +85,72 @@ async def get_statement_impl(ticker: str, form: str, date: str, statement_type: 
                     found_stmt_types.add(stmt['type'])
         period_count = len(found_periods)
         if period_count == 0 or len(found_stmt_types) == 0:
-            console.log(f"[yellow]No statements found for {statement_type}")
-            await ctx.error(f"No statements found for {statement_type}")
-            return {"error": f"No statements found for {statement_type}"}
+            msg = f"No statements found for {statement_type} (form={form}, ticker={ticker}, date={date})"
+            console.log(f"[yellow]{msg}[/yellow]")
+            await ctx.error(msg)
+            return {"error": msg}
         
         console.log(f"[green]Returning statement for {statement_type}")
         return {"stitched_statement": stitched_statement}
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        console.print(f"[red]Error in get_statement_impl: {str(e)}\nTraceback:\n{tb}[/red]")
-        await ctx.error(f"Error in get_statement_impl: {str(e)}")
-        return {"error": f"Error in get_statement_impl: {str(e)}"}
-
-async def summarize_financial_report_impl(ticker: str, form: str, date: str, statement_type: str, ctx: Context):
-    console.log(f"[bold blue]Entering summarize_financial_report_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}")
-    """
-    Generate a financial reports summary using the output of get_statement_impl and an LLM prompt.
-    """
-    # Get the statement data
-    statement_result = await get_statement_impl(ticker, form, date, statement_type, ctx)
-    if not statement_result or "error" in statement_result:
-        error_msg = statement_result.get("error", "No statement data available to summarize.")
-        console.log(f"[yellow]{error_msg}")
+        error_msg = f"Error in get_statements_impl for ticker={ticker}, form={form}, date={date}, statement={statement_type}: {str(e)}"
+        console.log(f"[red]{error_msg}\nTraceback:\n{tb}[/red]")
         await ctx.error(error_msg)
         return {"error": error_msg}
 
-    stitched_statement = statement_result["stitched_statement"]
+async def summarize_financial_report_impl(ticker: str, form: str, date: str, statement_type: str, ctx: Context):
+    """
+    Generate a financial reports summary using the output of get_statements_impl and an LLM prompt.
+    """
+    import traceback  # Ensure traceback is available for all exception blocks
+    console.log(f"[bold blue]Entering summarize_financial_report_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}")
+    try:
+        # Get the statement data
+        statement_result = await get_statements_impl(ticker, form, date, statement_type, ctx)
+        if not statement_result or "error" in statement_result:
+            error_msg = statement_result.get("error", "No statement data available to summarize.")
+            console.log(f"[yellow]Error in get_statements_impl: {error_msg}[/yellow]")
+            await ctx.error(error_msg)
+            return {"error": error_msg}
+        
+        # Convert the stitched statement a simpler markdown format
+        try:
+            stitched_statement = statement_result["stitched_statement"]
+            markdown_text = stitched_statement.render().to_markdown()
+            markdown_text = reformat_markdown_financial_table(markdown_text)
+        except Exception as e:
+            tb = traceback.format_exc()
+            error_msg = f"Failed to render or reformat statement for LLM prompt: {str(e)}"
+            console.log(f"[red]{error_msg}\nTraceback:\n{tb}[/red]")
+            await ctx.error(error_msg)
+            return {"error": error_msg}
 
-    # Prepare the prompt for the LLM
-    prompt = (
-        f"You are a financial analyst. Given the following {statement_type} data from a {form} filing for {ticker} (date: {date}), "
-        "write a concise, clear financial report summary suitable for an investor. "
-        "Highlight key figures, trends, and any notable changes.\n\n"
-        f"Statement Data:\n{stitched_statement}\n\nSummary:"
-    )
+        # Prepare the prompt for the LLM
+        prompt = (
+            f"You are a financial analyst. Given the following {statement_type} data from a {form} filing for {ticker} (date: {date}), "
+            "write a concise, clear financial report summary suitable for an investor. "
+            "Highlight key figures, trends, and any notable changes.\n\n"
+            f"Statement Data in Markdown Format:\n{markdown_text}\n\nSummary:"
+        )
 
-    # Use the LLM to generate the summary
-    console.log("[green]Prompt prepared for LLM. Sending to ctx.prompt...")
-    summary = await ctx.prompt(prompt)
-    console.log("[green]LLM summary received.")
-    return {"summary": summary}
+        # Use the LLM to generate the summary
+        console.log("[green]Prompt prepared for LLM. Sending to ctx.prompt...")
+        try:
+            summary = await ctx.prompt(prompt)
+        except Exception as e:
+            tb = traceback.format_exc()
+            error_msg = f"LLM prompt failed for ticker={ticker}, form={form}, date={date}, statement={statement_type}: {str(e)}"
+            console.log(f"[red]{error_msg}\nTraceback:\n{tb}[/red]")
+            await ctx.error(error_msg)
+            return {"error": error_msg}
+        console.log("[green]LLM summary received.")
+        return {"summary": summary}
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        error_msg = f"Unexpected error in summarize_financial_report_impl for ticker={ticker}, form={form}, date={date}, statement={statement_type}: {str(e)}"
+        console.log(f"[red]{error_msg}\nTraceback:\n{tb}[/red]")
+        await ctx.error(error_msg)
+        return {"error": error_msg}

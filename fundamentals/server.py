@@ -1,12 +1,12 @@
 from typing import Annotated, Dict, Any
 from fastmcp import FastMCP, Context
 from pydantic import Field
-from fundamentals.tools import get_statement_impl, summarize_financial_report_impl, print_company_info_impl
+from fundamentals.tools import get_statements_impl, summarize_financial_report_impl
 
 fun_mcp = FastMCP()
 
 @fun_mcp.tool()
-async def get_statement(
+async def get_statements(
     ticker: Annotated[str, Field(description="Company stock ticker symbol")],
     form: Annotated[str, Field(description="SEC filing form type (e.g., '10-K', '10-Q')")],
     date: Annotated[str, Field(description="Date to retrieve filings for")],
@@ -26,15 +26,10 @@ async def get_statement(
             - ":2024-01-01" denotes all filings up to and including 2024-01-01
             - "2024-01-01:2024-01-02" denotes all filings between 2024-01-01 and 2024-01-02
         statement: Type of financial statement to retrieve, one of:
-            - "AccountingPolicies"
             - "BalanceSheet"
-            - "BalanceSheetParenthetical"
             - "CashFlowStatement"
             - "ComprehensiveIncome" 
-            - "CoverPage"
-            - "Disclosures"
             - "IncomeStatement"
-            - "SegmentDisclosure"
             - "StatementOfEquity"
         ctx: Context object for error reporting and progress updates
             
@@ -46,35 +41,10 @@ async def get_statement(
     Raises:
         ValueError: If return value is not in the expected format
     """
-    result = await get_statement_impl(ticker, form, date, statement, ctx)
+    result = await get_statements_impl(ticker, form, date, statement, ctx)
     if not (isinstance(result, dict) and ("stitched_statement" in result or "error" in result)):
-        raise ValueError("get_statement must return a dict with a 'stitched_statement' or 'error' key.")
+        raise ValueError("get_statements must return a dict with a 'stitched_statement' or 'error' key.")
     return result
-
-
-@fun_mcp.tool()
-async def print_company_info(
-    ticker: Annotated[str, Field(description="Company stock ticker symbol")],
-    form: Annotated[str, Field(description="SEC filing form type (e.g., '10-K', '10-Q')")],
-    filing_index: Annotated[int, Field(description="Index of the filing to retrieve (0 for most recent)")],
-) -> Dict[str, Any]:
-    """Get company filing text from SEC EDGAR database.
-    
-    Args:
-        ticker: Company stock ticker symbol (e.g., 'AAPL' for Apple)
-        form: SEC filing form type (e.g., '10-K', '10-Q'), see [secforms.md](mdc:docs/edgartools/secforms.md)
-        filing_index: Index of the filing to retrieve (0 for most recent)
-        
-    Returns:
-        Dict[str, Any]: Dictionary containing filing information including:
-            - status: int (0 for success, non-zero for error)
-            - message: str (error message if status is non-zero)
-            - data: CompanyFilingInfo (filing information if status is 0)
-        
-    Raises:
-        ValueError: If no filings are found or if there's an error getting company info
-    """
-    return await print_company_info_impl(ticker, form, filing_index)
 
 @fun_mcp.tool()
 async def summarize_financial_report(
@@ -85,7 +55,7 @@ async def summarize_financial_report(
     ctx: Annotated[Context, Field(description="Context object")]
 ) -> Dict[str, Any]:
     """
-    Generate a financial report summary using an LLM prompt based on the output of get_statement.
+    Generate a financial report summary using an LLM prompt based on the output of get_statements.
 
     Returns:
         Dict[str, Any]:
