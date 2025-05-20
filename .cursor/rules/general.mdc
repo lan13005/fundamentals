@@ -48,21 +48,19 @@ When working with specific components, developers must read the following docume
 ## Architecture Guidelines
 
 ### MCP Server Architecture
-- ✅ Keep `server.py` clean and minimal
+- ✅ Keep [server.py](mdc:fundamentals/server.py) clean and minimal
 - ✅ All tool functionality must be:
   - Imported from appropriate modules
   - Decorated with `@mcp.tool()` to be an available tool
   - Organized in logical categories
+  - Contain descriptive docstrings
 
 ### Code Organization
-- ✅ Store all tool functionality in the `mcp/` folder
-- ✅ Organize tools into logical modules
-- ✅ Group similar functionality together
+- ✅ [tools.py](mdc:fundamentals/tools.py) contains all the avaible tools
 - ✅ Follow consistent naming conventions
 
 ## Testing Requirements
-- ✅ All tests must be stored in the `tests/` folder
-- ✅ See testing example in `docs/fastmcp-testing.md` for `fastmcp`
+- ✅ Integration tests should be into [test_integration.py](mdc:tests/test_integration.py)
 - ✅ Maintain test coverage for every tool
 
 ## Best Practices
@@ -72,4 +70,4 @@ When working with specific components, developers must read the following docume
 - ✅ Add comments for complex logic
 - ✅ Keep functions small and focused
 - ✅ Handle errors appropriately
-- ✅ Log important events and errors
+- ✅ Log important events and errors using rich console log

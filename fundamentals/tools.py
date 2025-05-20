@@ -6,12 +6,10 @@ from edgar import Company
 from dotenv import load_dotenv
 from rich.console import Console
 from edgar.xbrl import XBRLS
-from rich.traceback import install
 
 console = Console()
 
 load_dotenv()
-install()
 
 class CompanyFilingInfo(BaseModel):
     """Model for company filing information."""
@@ -81,8 +79,8 @@ async def print_company_info_impl(
             "data": None
         } 
 
-async def get_statement_impl(ticker: str, form: str, date: str, statement: str, ctx: Context):
-    console.log(f"[bold blue]Entering get_statement_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement={statement}")
+async def get_statement_impl(ticker: str, form: str, date: str, statement_type: str, ctx: Context):
+    console.log(f"[bold blue]Entering get_statement_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}")
     available_forms = set([
         "10-Q",
         "10-K",
@@ -92,7 +90,7 @@ async def get_statement_impl(ticker: str, form: str, date: str, statement: str, 
     if form not in available_forms:
         console.log(f"[yellow]Form {form} is not available")
         await ctx.error(f"Form {form} is not available: choose from {available_forms}")
-        return {}
+        return {"error": f"Form {form} is not available: choose from {available_forms}"}
     
     available_statements = set([
         "AccountingPolicies",       
@@ -107,16 +105,10 @@ async def get_statement_impl(ticker: str, form: str, date: str, statement: str, 
         "StatementOfEquity"
     ])
 
-    if statement not in available_statements:
-        console.log(f"[yellow]Statement {statement} is not available")
-        await ctx.error(f"Statement {statement} is not available: choose from {available_statements}")
-        return {}
-
-    cache_key = f"{ticker}_{form}_{date}_{statement}"
-
-    if cache_key in ctx.session:
-        console.log(f"[cyan]Cache hit for key {cache_key}")
-        return ctx.session[cache_key]
+    if statement_type not in available_statements:
+        console.log(f"[yellow]Statement {statement_type} is not available")
+        await ctx.error(f"Statement {statement_type} is not available: choose from {available_statements}")
+        return {"error": f"Statement {statement_type} is not available: choose from {available_statements}"}
 
     try:
         company = edgar.Company(ticker)
@@ -125,45 +117,58 @@ async def get_statement_impl(ticker: str, form: str, date: str, statement: str, 
         console.log(f"[green]Fetched filings for {ticker}")
         filtered_filings = filings.filter(form=form, date=date)
         console.log(f"[green]Filtered filings for form={form}, date={date}")
-        xbrl = XBRLS.from_filings(filtered_filings)
-        statements = xbrl.statements
-        if statement not in statements:
-            console.log(f"[yellow]Statement {statement} not found in XBRL statements")
-            await ctx.error(f"Statement {statement} not found in XBRL statements")
-            return {}
-        result_statement = statements[statement]
-        ctx.session[cache_key] = result_statement
-        console.log(f"[green]Returning statement for {statement} and cached under {cache_key}")
-        return result_statement
+        xbrls = XBRLS.from_filings(filtered_filings)
+        statements = xbrls.statements
+        stitched_statement = statements[statement_type]
+        
+        # Check that we actually loaded some statements across periods
+        found_stmt_types = set()
+        found_periods = xbrls.get_periods()
+        for xbrl in stitched_statement.xbrls.xbrl_list:
+            statement = xbrl.get_all_statements()
+            for stmt in statement:
+                if stmt['type']:
+                    found_stmt_types.add(stmt['type'])
+        period_count = len(found_periods)
+        if period_count == 0 or len(found_stmt_types) == 0:
+            console.log(f"[yellow]No statements found for {statement_type}")
+            await ctx.error(f"No statements found for {statement_type}")
+            return {"error": f"No statements found for {statement_type}"}
+        
+        console.log(f"[green]Returning statement for {statement_type}")
+        return {"stitched_statement": stitched_statement}
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
         console.print(f"[red]Error in get_statement_impl: {str(e)}\nTraceback:\n{tb}[/red]")
         await ctx.error(f"Error in get_statement_impl: {str(e)}")
-        return {}
+        return {"error": f"Error in get_statement_impl: {str(e)}"}
 
-async def summarize_financial_report_impl(ticker: str, form: str, date: str, statement: str, ctx: Context):
-    console.log(f"[bold blue]Entering summarize_financial_report_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement={statement}")
+async def summarize_financial_report_impl(ticker: str, form: str, date: str, statement_type: str, ctx: Context):
+    console.log(f"[bold blue]Entering summarize_financial_report_impl[/bold blue] with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}")
     """
     Generate a financial reports summary using the output of get_statement_impl and an LLM prompt.
     """
     # Get the statement data
-    statement_data = await get_statement_impl(ticker, form, date, statement, ctx)
-    if not statement_data:
-        console.log(f"[yellow]No statement data available to summarize for {ticker} {form} {date} {statement}")
-        await ctx.error("No statement data available to summarize.")
-        return {"status": 1, "message": "No statement data available to summarize.", "summary": None}
+    statement_result = await get_statement_impl(ticker, form, date, statement_type, ctx)
+    if not statement_result or "error" in statement_result:
+        error_msg = statement_result.get("error", "No statement data available to summarize.")
+        console.log(f"[yellow]{error_msg}")
+        await ctx.error(error_msg)
+        return {"error": error_msg}
+
+    stitched_statement = statement_result["stitched_statement"]
 
     # Prepare the prompt for the LLM
     prompt = (
-        f"You are a financial analyst. Given the following {statement} data from a {form} filing for {ticker} (date: {date}), "
+        f"You are a financial analyst. Given the following {statement_type} data from a {form} filing for {ticker} (date: {date}), "
         "write a concise, clear financial report summary suitable for an investor. "
         "Highlight key figures, trends, and any notable changes.\n\n"
-        f"Statement Data:\n{statement_data}\n\nSummary:"
+        f"Statement Data:\n{stitched_statement}\n\nSummary:"
     )
 
     # Use the LLM to generate the summary
     console.log("[green]Prompt prepared for LLM. Sending to ctx.prompt...")
     summary = await ctx.prompt(prompt)
     console.log("[green]LLM summary received.")
-    return {"status": 0, "message": "Success", "summary": summary}
+    return {"summary": summary}

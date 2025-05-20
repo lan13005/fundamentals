@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "asyncio>=3.4.3",
     "edgartools>=4.0.3",
     "fastmcp>=2.3.4",
     "ipython>=9.2.0",
@@ -15,6 +16,7 @@ dependencies = [
     "plotly>=6.1.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
+    "pytest-tornasync>=0.6.0.post2",
     "python-dotenv>=1.1.0",
     "rich>=14.0.0",
     "yfinance>=0.2.61",

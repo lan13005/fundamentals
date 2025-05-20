@@ -13,12 +13,6 @@ The overall goal is to work backwards. Whenever you want to implement a new piec
 
 ## MCP Tool Implementation Guidelines
 
-When code is updated in any of the following files, you must sync the changes:
-- [server.py](mdc:server.py)
-- [server_utils/__init__.py](mdc:server_utils/__init__.py)
-- [tests/test-new-command.py](mdc:tests/test-new-command.py)
-- [server_utils/new-command.py](mdc:server_utils/new-command.py)
-
 ### 1. Tool Structure
 - Use FastMCP's `@tool` decorator to expose Python functions as MCP tools
 - Follow single responsibility principle for each tool
@@ -50,18 +44,16 @@ When code is updated in any of the following files, you must sync the changes:
 - Use connection pooling for database operations
 
 ### 5. Error Handling
-- New error functionality should be put into [errors.py](mdc:server_utils/errors.py)
-- Use custom exception classes for different failure scenarios
 - Provide meaningful error messages
-- Implement proper logging using Python's logging module
+- Implement proper logging using rich console log
 - Handle edge cases gracefully
 - Include retry mechanisms where appropriate
 - Use context managers for resource cleanup
 
 ### 6. Maintenance
-- Include monitoring and logging
+- Include monitoring and logging using rich console log
 
 # Example MCP Tool and Test
 - Follow the structure of these examples when making modifications to the codebase
-- Example MCP Tool can be found in [server_utils/company_info.py](mdc:server_utils/company_info.py)
-- Corresponding example test can be found in [tests/test_company_info.py](mdc:tests/test_company_info.py)
+- Example MCP Tool can be found in [tools.py](mdc:fundamentals/tools.py)
+- Corresponding example test can be found in [test_integration.py](mdc:tests/test_integration.py)
