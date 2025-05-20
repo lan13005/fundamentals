@@ -13,22 +13,34 @@
 # ---
 
 import edgar as et
-import datetime
 from rich.console import Console
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import yfinance as yf
+from jinja2 import Template
+from pathlib import Path
+import server_utils
 console = Console()
 
 et.set_identity("lng1492@gmail.com")
+server_path = Path(server_utils.__file__).parent
 
 # # Getting filings
 
 # +
-ticker = "RKLB"
+ticker = "AAPL"
+date_range = "2024-01-01:"
+trades_or_volume = "volume"
 company = et.Company(ticker)
+if company.cik < 0:
+    raise ValueError(f"CIK for {ticker} is not found")
 filings = company.get_filings()
+if len(filings) == 0:
+    raise ValueError(f"No filings found for {ticker}")
+filings = filings.filter(date=date_range)
+if len(filings) == 0:
+    raise ValueError(f"No filings found for {ticker} in date range {date_range}")
 filing_df = filings.to_pandas()
 
 summary = {
@@ -51,61 +63,112 @@ summary = {
 
 # -
 
-filtered_filings = filings.filter(form="4", date="2024-01-01:")
-merged_df = [filing.obj().to_dataframe() for filing in filtered_filings]
+form4_filings = filings.filter(form="4", date=date_range)
+
+merged_df = [filing.obj().to_dataframe() for filing in form4_filings]
 merged_df = pd.concat(merged_df)
 
 # Convert Date column to datetime if it's not already
 merged_df['Date'] = pd.to_datetime(merged_df['Date'])
 
 # Get stock price data
-stock_data = yf.download(ticker, start=merged_df.Date.min(), end=merged_df.Date.max())
+start_date = merged_df.Date.min()
+end_date = merged_df.Date.max() + pd.Timedelta(days=1) # yf does not include the last day
+stock_data = yf.download(ticker, start=start_date, end=end_date)
+stock_data = stock_data.reset_index()
+stock_data.columns = stock_data.columns.droplevel(level=1)
 
 # Create interactive plot
-fig = make_subplots(rows=1, cols=1)
+fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
 # Add candlestick chart
 fig.add_trace(
     go.Candlestick(
-        x=stock_data.index,
-        open=stock_data['Open'],
-        high=stock_data['High'],
-        low=stock_data['Low'],
-        close=stock_data['Close'],
+        x=stock_data.Date.values,
+        open=stock_data.Open.values,
+        high=stock_data.High.values,
+        low=stock_data.Low.values,
+        close=stock_data.Close.values,
         name='Stock Price'
     ),
-    row=1, col=1
+    row=1, col=1, secondary_y=False
 )
 
-# Add insider trading indicators
-for _, row in merged_df.iterrows():
-    # Find the nearest trading day
-    trade_date = pd.to_datetime(row['Date'])
-    nearest_date = stock_data.index[stock_data.index.get_indexer([trade_date], method='nearest')[0]]
-    
-    # Determine if it's a purchase or sale
-    is_purchase = row['Shares'] > 0
-    
-    # Create arrow annotation
-    fig.add_annotation(
-        x=nearest_date,
-        y=stock_data.loc[nearest_date, 'High'] if is_purchase else stock_data.loc[nearest_date, 'Low'],
-        text='↑' if is_purchase else '↓',
-        showarrow=False,
-        font=dict(size=20, color='green' if is_purchase else 'red'),
-        row=1, col=1
-    )
+# --- Add histogram overlays for Purchases and Sales ---
+# Align merged_df dates to nearest trading day in stock_data
+trading_days = stock_data['Date']
+
+def align_to_trading_day(date):
+    return trading_days.iloc[(trading_days - date).abs().argsort()[0]]
+
+# Only keep P and S codes
+purchase_df = merged_df[merged_df['Code'] == 'P'].copy()
+sale_df = merged_df[merged_df['Code'] == 'S'].copy()
+
+# Align to trading days
+purchase_df['TradingDay'] = purchase_df['Date'].apply(align_to_trading_day)
+sale_df['TradingDay'] = sale_df['Date'].apply(align_to_trading_day)
+
+# Count unique purchases/sales per trading day
+if trades_or_volume == "trades":
+    purchase_counts = purchase_df.groupby('TradingDay').size().reindex(trading_days, fill_value=0)
+    sale_counts = sale_df.groupby('TradingDay').size().reindex(trading_days, fill_value=0)
+else:
+    purchase_counts = purchase_df.groupby('TradingDay')['Value'].sum().reindex(trading_days, fill_value=0)
+    sale_counts = sale_df.groupby('TradingDay')['Value'].sum().reindex(trading_days, fill_value=0)
+
+# Add bar traces for Purchases and Sales (secondary y-axis)
+fig.add_trace(
+    go.Bar(
+        x=trading_days,
+        y=purchase_counts,
+        name='Purchases',
+        marker_color='green',
+        opacity=0.4,
+    ),
+    row=1, col=1, secondary_y=True
+)
+fig.add_trace(
+    go.Bar(
+        x=trading_days,
+        y=sale_counts,
+        name='Sales',
+        marker_color='red',
+        opacity=0.4,
+    ),
+    row=1, col=1, secondary_y=True
+)
 
 # Update layout
 fig.update_layout(
     title=f'{ticker} Stock Price with Insider Trading Indicators',
     yaxis_title='Price',
     xaxis_title='Date',
-    template='plotly_white'
+    template='plotly_white',
+    barmode='overlay',
+)
+fig.update_yaxes(
+    title_text='# Insider Trades',
+    secondary_y=True,
+    showgrid=False
 )
 
-# Show the plot
-fig.show()
+# --- Render to HTML using Jinja2 template ---
+output_html_path = "output.html"
+template_path = f"{server_path}/templates/template.html"
+
+# Prepare data for template
+plotly_jinja_data = {
+    "fig": fig.to_html(full_html=False, include_plotlyjs='cdn'),
+    "summary": summary
+}
+
+with open(template_path, "r", encoding="utf-8") as template_file:
+    j2_template = Template(template_file.read())
+    rendered_html = j2_template.render(plotly_jinja_data)
+
+with open(output_html_path, "w", encoding="utf-8") as output_file:
+    output_file.write(rendered_html)
 
 ######################################################################
 # NOTE: Do not touch any of the code/comments below!

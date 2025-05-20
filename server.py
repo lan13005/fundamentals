@@ -1,7 +1,8 @@
 from typing import Annotated, Dict, Any
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from pydantic import Field
 from server_utils.company_info import print_company_info_impl
+from server_utils.tools import get_statement_impl
 
 # All function definitions should be imported. Keep this file clean
 # by only making calls to imported functions for use in the MCP server
@@ -15,6 +16,38 @@ from server_utils.company_info import print_company_info_impl
 #     pass
 
 mcp = FastMCP(title="notegen MCP Server")
+
+@mcp.tool()
+async def get_statement(
+    ticker: Annotated[str, Field(description="Company stock ticker symbol")],
+    form: Annotated[str, Field(description="SEC filing form type (e.g., '10-K', '10-Q')")],
+    date: Annotated[str, Field(description="Date to retrieve filings for")],
+    statement: Annotated[str, Field(description="Statement to retrieve")],
+    ctx: Annotated[Context, Field(description="Context object")]
+) -> Dict[str, Any]:
+    """
+    date: 
+        - "2024-01-01:" denotes all filings from 2024-01-01 to present
+        - ":2024-01-01" denotes all filings up to and including 2024-01-01
+        - "2024-01-01:2024-01-02" denotes all filings between 2024-01-01 and 2024-01-02
+    form: 
+        - "10-Q", 
+        - "10-K", 
+        - "8-K"
+    statement: 
+        - "AccountingPolicies", 
+        - "BalanceSheet", 
+        - "BalanceSheetParenthetical", 
+        - "CashFlowStatement", 
+        - "ComprehensiveIncome", 
+        - "CoverPage", 
+        - "Disclosures", 
+        - "IncomeStatement", 
+        - "SegmentDisclosure", 
+        - "StatementOfEquity"
+    """
+    return await get_statement_impl(ticker, form, date, statement, ctx)
+
 
 @mcp.tool()
 async def print_company_info(
