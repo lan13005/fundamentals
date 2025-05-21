@@ -53,6 +53,7 @@ The following files form the core of the project and must always be updated toge
 - [server.py](mdc:fundamentals/server.py): Main FastMCP server implementation and tool registration
 - [tools.py](mdc:fundamentals/tools.py): Tool implementations and business logic
 - [__init__.py](mdc:fundamentals/__init__.py): Package exports and version management
+- Update [CHANGELOG.md](mdc:CHANGELOG.md) with a succinct description of the change
 
 ### MCP Server Architecture
 - ✅ Keep [server.py](mdc:fundamentals/server.py) clean and minimal

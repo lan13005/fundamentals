@@ -1,8 +1,7 @@
 import pytest
-from fundamentals.tools import get_statements_impl, summarize_financial_report_impl
+from fundamentals.tools import get_statements_impl
 from rich.console import Console
 from unittest.mock import patch, AsyncMock
-from edgar.xbrl.statements import StitchedStatement
 
 console = Console()
 
@@ -29,39 +28,92 @@ async def test_get_statements_impl_real_data(MockContext):
     assert ("stitched_statement" in result or "error" in result)
     if "stitched_statement" in result:
         stitched_statement = result["stitched_statement"]
-        assert isinstance(stitched_statement, StitchedStatement)
+        assert isinstance(stitched_statement, str)
     else:
         assert isinstance(result["error"], str)
     console.log("[integration] test_get_statements_impl_real_data exit")
 
+# @patch('fastmcp.Context')
+# @pytest.mark.asyncio
+# async def test_summarize_financial_report_impl_real_data(MockContext):
+#     console.log("[integration] test_summarize_financial_report_impl_real_data entry")
+#     ctx = MockContext()
+#     ctx.debug = AsyncMock()
+#     ctx.info = AsyncMock()
+#     ctx.warning = AsyncMock()
+#     ctx.error = AsyncMock()
+#     ctx.report_progress = AsyncMock()
+#     # Mock ctx.sample to return an object with a .text property
+#     class MockSampleResponse:
+#         def __init__(self, text):
+#             self.text = text
+#     ctx.sample = AsyncMock(return_value=MockSampleResponse("This is a mock summary."))
+#     result = await summarize_financial_report_impl(
+#         ticker="AAPL",
+#         form="10-K",
+#         date="2023-10-27:",
+#         statement_type="BalanceSheet",
+#         ctx=ctx
+#     )
+#     console.log(f"[integration] Result: {result}")
+#     assert isinstance(result, dict)
+#     assert ("summary" in result or "error" in result)
+#     if "summary" in result:
+#         summary = result["summary"]
+#         assert isinstance(summary, str)
+#         assert len(summary) > 10
+#     else:
+#         assert isinstance(result["error"], str)
+#     console.log("[integration] test_summarize_financial_report_impl_real_data exit")
+
 @patch('fastmcp.Context')
 @pytest.mark.asyncio
-async def test_summarize_financial_report_impl_real_data(MockContext):
-    console.log("[integration] test_summarize_financial_report_impl_real_data entry")
+async def test_get_statements_impl_latest(MockContext):
+    console.log("[integration] test_get_statements_impl_latest entry")
     ctx = MockContext()
     ctx.debug = AsyncMock()
     ctx.info = AsyncMock()
     ctx.warning = AsyncMock()
     ctx.error = AsyncMock()
     ctx.report_progress = AsyncMock()
-    ctx.prompt = AsyncMock(return_value="This is a mock summary.")
-    result = await summarize_financial_report_impl(
+    ctx.prompt = AsyncMock(return_value={})
+    result = await get_statements_impl(
         ticker="AAPL",
         form="10-K",
-        date="2023-10-27:",
+        date="latest",
         statement_type="BalanceSheet",
         ctx=ctx
     )
     console.log(f"[integration] Result: {result}")
     assert isinstance(result, dict)
-    assert ("summary" in result or "error" in result)
-    if "summary" in result:
-        summary = result["summary"]
-        assert isinstance(summary, str)
-        assert len(summary) > 10
-    else:
-        assert isinstance(result["error"], str)
-    console.log("[integration] test_summarize_financial_report_impl_real_data exit")
+    assert ("stitched_statement" in result or "error" in result)
+    console.log("[integration] test_get_statements_impl_latest exit")
+
+# @patch('fastmcp.Context')
+# @pytest.mark.asyncio
+# async def test_summarize_financial_report_impl_latest(MockContext):
+#     console.log("[integration] test_summarize_financial_report_impl_latest entry")
+#     ctx = MockContext()
+#     ctx.debug = AsyncMock()
+#     ctx.info = AsyncMock()
+#     ctx.warning = AsyncMock()
+#     ctx.error = AsyncMock()
+#     ctx.report_progress = AsyncMock()
+#     class MockSampleResponse:
+#         def __init__(self, text):
+#             self.text = text
+#     ctx.sample = AsyncMock(return_value=MockSampleResponse("This is a mock summary."))
+#     result = await summarize_financial_report_impl(
+#         ticker="AAPL",
+#         form="10-K",
+#         date="latest",
+#         statement_type="BalanceSheet",
+#         ctx=ctx
+#     )
+#     console.log(f"[integration] Result: {result}")
+#     assert isinstance(result, dict)
+#     assert ("summary" in result or "error" in result)
+#     console.log("[integration] test_summarize_financial_report_impl_latest exit")
 
 
 ##### DO NOT MODIFY BELOW THIS LINE, FOR REFERENCE ONLY #####

@@ -1,0 +1,110 @@
+---
+description: 
+globs: **/*
+alwaysApply: true
+---
+
+# Cursor MCP Log Location and Troubleshooting Guide
+
+**IMPORTANT** If you run into any errors with any MCP tool:
+- Stop using more tools
+- Figure out what is the source of the error
+- Refer to [mcp-tool-error-logs.md](mdc:.cursor/rules/mcp-tool-error-logs.md) for detailed instructions on locating and analyzing logs.
+
+---
+
+## 📁 1. Primary MCP Log Location
+
+```
+~/Library/Application Support/Cursor/logs/[SESSION_ID]/window[N]/exthost/anysphere.cursor-always-local/Cursor MCP.log
+```
+
+- `[SESSION_ID]` is a timestamp-based directory, e.g., `20250313T140544`.
+- `[N]` is the window number (`1`, `2`, `3`, etc.).
+
+---
+
+## 📂 2. Session Directory Structure
+
+- Log sessions are grouped by timestamp: `YYYYMMDDTHHMMSS`.
+- Recent sessions have higher timestamps (i.e., later dates).
+- **Example**:
+  ```
+  ~/Library/Application Support/Cursor/logs/20250313T140544/
+  ```
+
+---
+
+## 🗂️ 3. Related Log Files
+
+Other logs useful for debugging MCP issues include:
+
+- **Filesync Log**:
+  ```
+  window[N]/exthost/anysphere.cursor-always-local/Filesync.log
+  ```
+
+- **Retrieval Log**:
+  ```
+  window[N]/exthost/anysphere.cursor-retrieval/Cursor Indexing & Retrieval.log
+  ```
+
+- **Window Renderer Log**:
+  ```
+  window[N]/renderer.log
+  ```
+
+---
+
+# ❗ Common MCP Error Patterns
+
+---
+
+## 🔍 1. JSON Parsing Errors
+
+- **Error Message**:
+  ```
+  Client error for command '/path/to/script': Unexpected token 'X', "..." is not valid JSON
+  ```
+
+- **Cause**:
+  - MCP script returned malformed or non-JSON output.
+  - Cursor expects strict JSON responses.
+
+- **Fix**:
+  - Ensure the script outputs **only valid JSON** when communicating with Cursor.
+
+---
+
+## 🔌 2. Connection Errors
+
+- **Error Message**:
+  ```
+  Error connecting to MCP server
+  Connection refused
+  ```
+
+- **Cause**:
+  - MCP server is not running.
+  - Network or permissions issue.
+
+- **Fix**:
+  - Check script execution state.
+  - Verify file permissions and network connectivity.
+
+---
+
+## 🧰 3. Tool Execution Errors
+
+- **Error Message**:
+  ```
+  Failed to execute tool 'tool_name'
+  ```
+
+- **Cause**:
+  - Internal bug in the MCP tool implementation.
+  - Invalid input parameters.
+
+- **Fix**:
+  - Debug the tool's source code.
+  - Validate parameter parsing and execution logic.
