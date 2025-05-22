@@ -1,0 +1,105 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+### ✨ Unified Styling Guidelines (Rich & Matplotlib)
+
+---
+
+#### 1 Rich Console
+
+**Section banner**
+- Use a horizontal rule for major stages.
+
+```python
+console.rule("[bold blue]ETF vs. Momentum Basket Simulation")
+```
+
+**Hyper-parameter / metadata tables**
+- `box=box.ROUNDED`
+- Header style `"bold magenta"`
+- First column `"cyan"`; numeric columns `"yellow"` & right-aligned.
+```python
+hyper_table = Table(
+    title="Simulation Hyperparameters",
+    box=box.ROUNDED,
+    show_header=True,
+    header_style="bold magenta",
+)
+hyper_table.add_column("Parameter", style="cyan", no_wrap=True)
+hyper_table.add_column("Value",     style="yellow", justify="right")
+``` 
+
+**Results tables**
+- Header style `"bold green"`; set `min_width` for tidy columns.
+```python
+results_table = Table(
+    title="Simulation Results (−σ | Median | +σ)",
+    box=box.ROUNDED,
+    header_style="bold green",
+)
+``` 
+
+**Panels (multi-line notes)**
+- Wrap long explanations; give a title & `border_style`.
+```python
+console.print(
+    Panel(explanation_text, title="Explanation", border_style="blue")
+)
+```
+
+**Progress bars**
+- Combine spinner, bar, % and time columns.
+```python
+with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+) as progress:
+```
+
+**Color palette**
+- Blue (titles) • Magenta (headers) • Cyan (labels) • Yellow (numbers) • Green (success).
+```python
+ETF_COLOR      = "#1f77b4"   # blue
+MOMENTUM_COLOR = "#d62728"   # red
+```
+
+---
+
+#### 2 Matplotlib Plotting
+
+**Example plot**
+```python
+fig, ax = plt.subplots(figsize=(8, 5)) # figsize depending on content
+counts, edges, _ = ax.hist(
+    data, bins=bins, histtype="step", linewidth=2,
+    color=color, label=label
+)
+ax.stairs(counts, edges, color=color, linewidth=2)
+ax.set_xlabel("Ending Value ($)")
+ax.set_ylabel("Simulations")
+ax.set_title("Distribution of Ending Portfolio Values (Monte Carlo)", fontsize=14)
+ax.grid(True, alpha=0.3)
+ax.legend()
+for spine in ax.spines.values():
+    spine.set_linewidth(1.5)
+plt.tight_layout() # always before saving
+plt.savefig("plot.png", dpi=150)
+```
+
+---
+
+#### 3 General Principles (markdown)
+
+1. **Clarity over clutter** – minimalist visuals; numbers & explanations accompany every plot.
+2. **Consistency** – identical colour codes, border shapes, and font weights across scripts.
+3. **Accessibility** – tables provide text equivalents; colour choices meet contrast best-practice.
+4. **Explain first** – print hyper-parameters and an explanatory panel _before_ outputting or saving graphics.
+
