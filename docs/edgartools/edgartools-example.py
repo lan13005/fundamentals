@@ -20,11 +20,11 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 from jinja2 import Template
 from pathlib import Path
-import server_utils
+import fundamentals
 console = Console()
 
 et.set_identity("lng1492@gmail.com")
-server_path = Path(server_utils.__file__).parent
+server_path = Path(fundamentals.__file__).parent
 
 # # Getting filings
 
