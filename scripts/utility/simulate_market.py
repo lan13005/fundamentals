@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich import box
 import matplotlib.pyplot as plt
 import os
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
 
 # Parameters (hyperparameters)
 weekly_contrib = 100  # Weekly contribution in dollars (Constant)
@@ -89,27 +90,39 @@ def run_monte_carlo():
     index_weekly_logret_sigma = index_annual_sigma / np.sqrt(52)
     momentum_weekly_logret_mean = (np.log1p(momentum_annual_mean) - 0.5 * momentum_annual_sigma**2) / 52
     momentum_weekly_logret_sigma = momentum_annual_sigma / np.sqrt(52)
-    for _ in range(n_sim):
-        # ETF costs: constant or normal as documented
-        etf_half_spread = max(0, rng.normal(etf_half_spread_mean, etf_half_spread_sigma))
-        etf_expense_annual = max(0, rng.normal(etf_expense_annual_mean, etf_expense_annual_sigma))
-        etf_expense_weekly = etf_expense_annual / 52
-        # Stock basket costs: normal as documented
-        stock_half_spread = max(0, rng.normal(stock_half_spread_mean, stock_half_spread_sigma))
-        stock_roundtrip = 2 * stock_half_spread
-        purge_fraction = max(0, rng.normal(purge_fraction_mean, purge_fraction_sigma))
-        # Simulate ETF
-        etf_val, etf_spread, etf_fee = simulate(
-            "ETF", index_weekly_logret_mean, index_weekly_logret_sigma, etf_half_spread, etf_expense_weekly, stock_half_spread, stock_roundtrip, purge_fraction)
-        etf_vals.append(etf_val)
-        etf_spreads.append(etf_spread)
-        etf_fees.append(etf_fee)
-        # Simulate Momentum
-        mom_val, mom_spread, mom_fee = simulate(
-            "Stock", momentum_weekly_logret_mean, momentum_weekly_logret_sigma, etf_half_spread, etf_expense_weekly, stock_half_spread, stock_roundtrip, purge_fraction)
-        mom_vals.append(mom_val)
-        mom_spreads.append(mom_spread)
-        mom_fees.append(mom_fee)
+    console = Console()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Running Monte Carlo simulations...", total=n_sim)
+        for _ in range(n_sim):
+            # ETF costs: constant or normal as documented
+            etf_half_spread = max(0, rng.normal(etf_half_spread_mean, etf_half_spread_sigma))
+            etf_expense_annual = max(0, rng.normal(etf_expense_annual_mean, etf_expense_annual_sigma))
+            etf_expense_weekly = etf_expense_annual / 52
+            # Stock basket costs: normal as documented
+            stock_half_spread = max(0, rng.normal(stock_half_spread_mean, stock_half_spread_sigma))
+            stock_roundtrip = 2 * stock_half_spread
+            purge_fraction = max(0, rng.normal(purge_fraction_mean, purge_fraction_sigma))
+            # Simulate ETF
+            etf_val, etf_spread, etf_fee = simulate(
+                "ETF", index_weekly_logret_mean, index_weekly_logret_sigma, etf_half_spread, etf_expense_weekly, stock_half_spread, stock_roundtrip, purge_fraction)
+            etf_vals.append(etf_val)
+            etf_spreads.append(etf_spread)
+            etf_fees.append(etf_fee)
+            # Simulate Momentum
+            mom_val, mom_spread, mom_fee = simulate(
+                "Stock", momentum_weekly_logret_mean, momentum_weekly_logret_sigma, etf_half_spread, etf_expense_weekly, stock_half_spread, stock_roundtrip, purge_fraction)
+            mom_vals.append(mom_val)
+            mom_spreads.append(mom_spread)
+            mom_fees.append(mom_fee)
+            progress.update(task, advance=1)
     return (np.array(etf_vals), np.array(etf_spreads), np.array(etf_fees),
             np.array(mom_vals), np.array(mom_spreads), np.array(mom_fees))
 
