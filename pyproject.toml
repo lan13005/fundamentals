@@ -22,6 +22,12 @@ dependencies = [
     "yfinance>=0.2.61",
 ]
 
+# not in src format ignore prompts/ folder
+[tool.setuptools.packages.find]
+where = ["."] 
+include = ["fundamentals"] 
+exclude = [] 
+namespaces = false 
+
 [project.scripts]
-fun_dcm = "scripts.diagnose_cursor_mcp:main"
-fun_sm = "scripts.swap_mdc:main"
+fund = "scripts.fund_cli:main"

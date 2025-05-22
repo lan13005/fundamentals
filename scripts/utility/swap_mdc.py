@@ -19,6 +19,3 @@ def main():
         else:
             shutil.move(file, file.replace(".mdc", ".md"))
             console.print(f"[yellow]{file}[/yellow] changed extension to [bold green].md[/bold green]")
-
-if __name__ == "__main__":
-    main()

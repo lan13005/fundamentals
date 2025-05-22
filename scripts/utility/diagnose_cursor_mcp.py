@@ -7,7 +7,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from rich import box
-import argparse
 
 LOG_ROOT = os.path.expanduser("~/Library/Application Support/Cursor/logs/")
 LOG_FILENAME = "Cursor MCP.log"
@@ -98,8 +97,7 @@ def print_log_report(logs):
         
     if paths_with_errors:
         for path in paths_with_errors:
-            # escaped_path = path.replace(" ", "\ ")
-            escaped_path = path.replace("\s+", " ").replace(" ", "\ ")
+            escaped_path = path.replace("\s+", " ").replace(" ", "\\ ")
             console.print(f"[red]Path:[/red] {escaped_path}")
 
 def parse_range_arg(range_arg: str, total: int):
@@ -122,11 +120,12 @@ def parse_range_arg(range_arg: str, total: int):
     end = max(start, min(end, total))
     return start, end
 
-def main():
-    parser = argparse.ArgumentParser(description="Diagnose Cursor MCP logs for errors and successes.")
-    parser.add_argument('range', nargs='?', default=None, help="Range of logs to analyze: N, N:M, N:, :M")
-    args = parser.parse_args()
-
+def main(range_arg: str = None):
+    """
+    Diagnose Cursor MCP logs for errors and successes.
+    Args:
+        range_arg (str or None): Range of logs to analyze: N, N:M, N:, :M. If None, all logs are analyzed.
+    """
     console.rule("[bold blue]Cursor MCP Log Diagnostics[/bold blue]")
     if not os.path.isdir(LOG_ROOT):
         console.print(f"[red]Log root directory not found:[/red] {LOG_ROOT}")
@@ -136,13 +135,10 @@ def main():
         console.print(f"[yellow]No '{LOG_FILENAME}' files found in {LOG_ROOT}[/yellow]")
         return
     total = len(log_files)
-    start, end = parse_range_arg(args.range, total)
+    start, end = parse_range_arg(range_arg, total)
     selected_log_files = log_files[start:end]
     logs = []
     for path, mtime in selected_log_files:
         analysis = analyze_log_file(path)
         logs.append({"path": path, "mtime": mtime, "analysis": analysis})
     print_log_report(logs)
-
-if __name__ == "__main__":
-    main()
