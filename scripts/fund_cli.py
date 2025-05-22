@@ -2,7 +2,7 @@ import argparse
 from rich.console import Console
 from rich.panel import Panel
 import sys
-from scripts.utility import diagnose_cursor_mcp, swap_mdc, gics_correlation
+from scripts.utility import diagnose_cursor_mcp, swap_mdc
 from scripts.utility import simulate_market
 
 console = Console()
@@ -13,9 +13,6 @@ def run_diagnose_cursor_mcp(args):
 
 def run_swap_mdc(args):
     swap_mdc.main()
-
-def run_gics_correlation(args):
-    gics_correlation.main()
 
 def run_spread_sim(args):
     simulate_market.main()
@@ -43,13 +40,6 @@ def main():
         help="Swap .mdc and .md file extensions in .cursor/rules/."
     )
     parser_swap.set_defaults(func=run_swap_mdc)
-
-    # gics-correlation
-    parser_gics = subparsers.add_parser(
-        "gics-correlation",
-        help="Compute and print GICS sector correlation matrix using yfinance."
-    )
-    parser_gics.set_defaults(func=run_gics_correlation)
 
     # spread-sim
     parser_spread = subparsers.add_parser(

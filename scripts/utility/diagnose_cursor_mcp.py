@@ -8,6 +8,12 @@ from rich.panel import Panel
 from rich.text import Text
 from rich import box
 
+###############################
+# Alternatively you can check:
+# vscode -> Output -> Cursor MCP
+# to see the logs in real time
+################################
+
 LOG_ROOT = os.path.expanduser("~/Library/Application Support/Cursor/logs/")
 LOG_FILENAME = "Cursor MCP.log"
 
