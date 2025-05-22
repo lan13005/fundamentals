@@ -1,18 +1,17 @@
 import os
-import glob
 import re
-from pathlib import Path
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from rich import box
 
-###############################
-# Alternatively you can check:
+#######################################################################
+# Diagnose Cursor MCP logs for errors and successes.
+# Use diagnose_cursor_mcp(range_arg) to analyze logs programmatically.
+# NOTE: Alternatively you can check:
 # vscode -> Output -> Cursor MCP
 # to see the logs in real time
-################################
+#######################################################################
 
 LOG_ROOT = os.path.expanduser("~/Library/Application Support/Cursor/logs/")
 LOG_FILENAME = "Cursor MCP.log"
@@ -103,7 +102,7 @@ def print_log_report(logs):
         
     if paths_with_errors:
         for path in paths_with_errors:
-            escaped_path = path.replace("\s+", " ").replace(" ", "\\ ")
+            escaped_path = path.replace(r"\s+", " ").replace(" ", r"\_ ")
             console.print(f"[red]Path:[/red] {escaped_path}")
 
 def parse_range_arg(range_arg: str, total: int):
@@ -126,7 +125,7 @@ def parse_range_arg(range_arg: str, total: int):
     end = max(start, min(end, total))
     return start, end
 
-def main(range_arg: str = None):
+def diagnose_cursor_mcp(range_arg: str = None):
     """
     Diagnose Cursor MCP logs for errors and successes.
     Args:

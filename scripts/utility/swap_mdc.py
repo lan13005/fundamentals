@@ -5,11 +5,17 @@ from rich.console import Console
 
 console = Console()
 
-# Cursor annoying takes forever to render .mdc files and setting vscode's files.associations"
-#  to attempt rendering as .md file does not work. It still renders it as .mdc.
-# This script swaps the .mdc and .md files whenever called
+################################################################
+# Cursor annoying takes forever to render .mdc files and setting
+# vscode's files.associations" to attempt rendering as .md file 
+# does not work. It still renders it as .mdc. This script swaps 
+# the .mdc and .md files whenever called
+################################################################
 
-def main():
+def swap_mdc():
+    """
+    Swap .mdc and .md file extensions in .cursor/rules/.
+    """
     md_files = glob.glob(".cursor/rules/*.md*")
 
     for file in md_files:

@@ -1,4 +1,11 @@
-import pandas as pd
+###########################################################
+# Simulate ETF vs. Momentum Basket Spread using Monte Carlo
+# simulation.
+# Outputs:
+#     - Prints simulation results and saves histogram to
+#       sim_market_histogram.png
+###########################################################
+
 import numpy as np
 from rich.console import Console
 from rich.table import Table
@@ -126,7 +133,7 @@ def modern_hist(ax, data, bins, label, color):
         spine.set_linewidth(1.5)
     return counts, edges
 
-def main() -> None:
+def run_etf_vs_momentum_simulation():
     """
     Run the ETF vs. momentum basket spread simulation and print results using rich.
     Emphasizes hyperparameters and explains the simulation logic in the output.
@@ -209,9 +216,5 @@ def main() -> None:
 - Momentum basket incurs higher spread and, every {purge_interval} weeks, a fraction of the portfolio is purged (sold and repurchased) to simulate turnover.\n
 - Results show the impact of costs, turnover, and market randomness on long-term returns.\n
 - Table shows median ± 1σ (68%) range from Monte Carlo ensemble.\n
-- Histogram shows the full distribution of outcomes."
-    """
+- Histogram shows the full distribution of outcomes."""
     console.print(Panel(explanation, title="Explanation", border_style="blue"))
-
-if __name__ == "__main__":
-    main()
