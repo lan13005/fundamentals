@@ -15,10 +15,21 @@ Async Macrotrends scraper  (v0.5)
 """
 
 from __future__ import annotations
-import argparse, asyncio, datetime as dt, json, pathlib, re, warnings
-from typing import Iterable, List, Tuple
 
-import aiohttp, duckdb, pandas as pd, yfinance as yf
+import argparse
+import asyncio
+import datetime as dt
+import json
+import pathlib
+import re
+import warnings
+from collections.abc import Iterable
+from typing import List, Tuple
+
+import aiohttp
+import duckdb
+import pandas as pd
+import yfinance as yf
 from aiohttp import ClientTimeout
 from rich.console import Console
 from rich.table import Table
@@ -28,7 +39,7 @@ console = Console()
 
 # ───────────── configuration ───────────── #
 DATA_DIR = pathlib.Path("macro_data/parquet")
-DB_PATH  = pathlib.Path("macro_data/macrotrends.duckdb")
+DB_PATH = pathlib.Path("macro_data/macrotrends.duckdb")
 UTIL_DIR = pathlib.Path("fundamentals/utility")
 OVERRIDE_FILE = UTIL_DIR / "slug_overrides.json"
 
@@ -37,9 +48,10 @@ UTIL_DIR.mkdir(parents=True, exist_ok=True)
 
 URL_TMPL = "https://www.macrotrends.net/stocks/charts/{sym}/{slug}/{page}?freq={freq}"
 
-_RE_ORIG  = re.compile(r"originalData\s*=\s*(\[\{.*?\}\]);", re.S)
+_RE_ORIG = re.compile(r"originalData\s*=\s*(\[\{.*?\}\]);", re.S)
 _RE_CLEAN = re.compile(r"<.*?>")
-_RE_NON   = re.compile(r"^[^a-zA-Z]*|[^a-zA-Z]*$")
+_RE_NON = re.compile(r"^[^a-zA-Z]*|[^a-zA-Z]*$")
+
 
 # ───────────── overrides I/O ───────────── #
 def load_file_overrides() -> dict[str, str]:
@@ -51,6 +63,7 @@ def load_file_overrides() -> dict[str, str]:
             console.print(f"[red]Warning:[/] could not read {OVERRIDE_FILE}: {e}")
     return {}
 
+
 def save_file_overrides(mapping: dict[str, str]) -> None:
     try:
         with OVERRIDE_FILE.open("w") as f:
@@ -58,11 +71,14 @@ def save_file_overrides(mapping: dict[str, str]) -> None:
     except Exception as e:
         console.print(f"[red]Warning:[/] could not write {OVERRIDE_FILE}: {e}")
 
+
 FILE_OVERRIDES = load_file_overrides()
+
 
 # ───────────── helper funcs ───────────── #
 def strip_non_letters(s: str) -> str:
     return _RE_NON.sub("", s)
+
 
 def derive_slug(ticker: str) -> str:
     try:
@@ -72,22 +88,22 @@ def derive_slug(ticker: str) -> str:
         base = ticker
     return strip_non_letters(base.lower().replace(" ", "-"))
 
+
 def parse_original_data(html: str) -> pd.DataFrame:
     m = _RE_ORIG.search(html)
     if not m:
         raise ValueError("originalData not found")
-    df = pd.DataFrame(eval(m.group(1)))          # noqa: S307
+    df = pd.DataFrame(eval(m.group(1)))
     if "field_name" in df.columns:
         df["field_name"] = (
-            df["field_name"]
-            .str.replace(_RE_CLEAN, "", regex=True)
-            .str.replace(r"\\/", "/", regex=True)
-            .str.strip()
+            df["field_name"].str.replace(_RE_CLEAN, "", regex=True).str.replace(r"\\/", "/", regex=True).str.strip()
         )
     return df.drop(columns=["popup_icon"], errors="ignore")
 
+
 def parquet_name(sym: str, page: str, snap_date: dt.date) -> pathlib.Path:
     return DATA_DIR / f"{sym.upper()}_{page}_{snap_date.isoformat()}.parquet"
+
 
 # ───────────── async scraping ───────────── #
 async def fetch_table(
@@ -109,7 +125,7 @@ async def fetch_table(
     url = URL_TMPL.format(sym=sym, slug=slug, page=page, freq=freq)
     console.print(f"[yellow]WEB [/yellow]{url}")
     async with session.get(url, allow_redirects=True) as r:
-        html  = await r.text()
+        html = await r.text()
         final = str(r.url)
 
     # detect redirect / extract correct slug
@@ -125,6 +141,7 @@ async def fetch_table(
     parse_original_data(html).to_parquet(fn, compression="snappy")
     console.print(f"[cyan]SAVE[/cyan] {fn.name}")
 
+
 async def scrape_many(
     symbols: List[Tuple[str, str]],
     pages: Iterable[str],
@@ -135,10 +152,14 @@ async def scrape_many(
     overrides: dict[str, str],
 ) -> None:
     async with aiohttp.ClientSession(timeout=ClientTimeout(total=20)) as sess:
-        await asyncio.gather(*[
-            fetch_table(sess, s, slug, p, snap_date, freq, force, mismatches, overrides)
-            for s, slug in symbols for p in pages
-        ])
+        await asyncio.gather(
+            *[
+                fetch_table(sess, s, slug, p, snap_date, freq, force, mismatches, overrides)
+                for s, slug in symbols
+                for p in pages
+            ]
+        )
+
 
 # ───────────── DuckDB refresh ───────────── #
 def materialise_duckdb() -> None:
@@ -153,48 +174,46 @@ def materialise_duckdb() -> None:
         FROM read_parquet('{DATA_DIR}/*.parquet', union_by_name=TRUE)
         """
     )
-    console.print(f"[bold green]✓ macrotrends.duckdb refreshed[/bold green]")
+    console.print("[bold green]✓ macrotrends.duckdb refreshed[/bold green]")
+
 
 # ───────────── CLI parsing ───────────── #
 def parse_args() -> argparse.Namespace:
     today = dt.date.today().isoformat()
     p = argparse.ArgumentParser()
     p.add_argument("--symbols", nargs="+", required=True, metavar="TICKER")
-    p.add_argument("--pages", nargs="+", default=[
-        "income-statement", "balance-sheet", "cash-flow-statement", "financial-ratios"])
+    p.add_argument(
+        "--pages", nargs="+", default=["income-statement", "balance-sheet", "cash-flow-statement", "financial-ratios"]
+    )
     p.add_argument("--slug-map", nargs="+", default=[], metavar="TICKER:slug")
     p.add_argument("--freq", choices=["Q", "A"], default="Q")
     p.add_argument("--force", action="store_true")
     p.add_argument("--date", default=today, metavar="YYYY-MM-DD")
     return p.parse_args()
 
+
 def build_symbol_list(args) -> List[Tuple[str, str]]:
-    cli_overrides = {k.upper(): v for k, v in (
-        (pair.split(":", 1) for pair in args.slug_map) if args.slug_map else [])}
+    cli_overrides = {k.upper(): v for k, v in ((pair.split(":", 1) for pair in args.slug_map) if args.slug_map else [])}
     merged = {**FILE_OVERRIDES, **cli_overrides}
     return [(sym, merged.get(sym.upper(), derive_slug(sym))) for sym in args.symbols]
 
+
 # ───────────── main ───────────── #
 def main() -> None:
-    args      = parse_args()
-    symbols   = build_symbol_list(args)
+    args = parse_args()
+    symbols = build_symbol_list(args)
     snap_date = dt.date.fromisoformat(args.date)
 
     mismatches: list[Tuple[str, str]] = []
     overrides_updated = FILE_OVERRIDES.copy()
 
-    asyncio.run(
-        scrape_many(
-            symbols, args.pages, snap_date, args.freq, args.force,
-            mismatches, overrides_updated
-        )
-    )
+    asyncio.run(scrape_many(symbols, args.pages, snap_date, args.freq, args.force, mismatches, overrides_updated))
     materialise_duckdb()
 
     # persist any new overrides discovered
     if overrides_updated != FILE_OVERRIDES:
         save_file_overrides(overrides_updated)
-        console.print(f"[bold magenta]↺ slug_overrides.json updated.[/bold magenta]")
+        console.print("[bold magenta]↺ slug_overrides.json updated.[/bold magenta]")
 
     # pretty-print mismatches
     if mismatches:
@@ -209,6 +228,7 @@ def main() -> None:
             "\n[yellow]⚠ Because the site redirected, annual data were downloaded.[/yellow]\n"
             "   [yellow]Rerun the program to obtain quarterly data with the corrected slug.[/yellow]\n"
         )
+
 
 if __name__ == "__main__":
     main()
