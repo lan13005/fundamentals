@@ -1,22 +1,5 @@
-#!/usr/bin/env python3
-"""
-Async Macrotrends scraper  (v0.5)
-
-* Parquet snapshots   →  macro_data/parquet/
-* Rebuilds macro_data/macrotrends.duckdb each run
-* --freq Q|A  (quarterly default)   --force  to ignore cache
-* Slug resolution order:
-      1. fundamentals/utility/slug_overrides.json   (auto-updated)
-      2. --slug-map CLI overrides
-      3. yfinance displayName → slug
-* If Macrotrends redirects (slug mismatch) the correct slug is
-  harvested, appended to slug_overrides.json, and a warning is issued
-  that the fetched file is annual (freq=A).  Rerun to get quarterly data.
-"""
-
 from __future__ import annotations
 
-import argparse
 import asyncio
 import datetime as dt
 import json
@@ -24,7 +7,7 @@ import pathlib
 import re
 import warnings
 from collections.abc import Iterable
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import aiohttp
 import duckdb
@@ -52,6 +35,7 @@ _RE_ORIG = re.compile(r"originalData\s*=\s*(\[\{.*?\}\]);", re.S)
 _RE_CLEAN = re.compile(r"<.*?>")
 _RE_NON = re.compile(r"^[^a-zA-Z]*|[^a-zA-Z]*$")
 
+DEFAULT_PAGES = ["income-statement", "balance-sheet", "cash-flow-statement", "financial-ratios"]
 
 # ───────────── overrides I/O ───────────── #
 def load_file_overrides() -> dict[str, str]:
@@ -177,37 +161,47 @@ def materialise_duckdb() -> None:
     console.print("[bold green]✓ macrotrends.duckdb refreshed[/bold green]")
 
 
-# ───────────── CLI parsing ───────────── #
-def parse_args() -> argparse.Namespace:
-    today = dt.date.today().isoformat()
-    p = argparse.ArgumentParser()
-    p.add_argument("--symbols", nargs="+", required=True, metavar="TICKER")
-    p.add_argument(
-        "--pages", nargs="+", default=["income-statement", "balance-sheet", "cash-flow-statement", "financial-ratios"]
-    )
-    p.add_argument("--slug-map", nargs="+", default=[], metavar="TICKER:slug")
-    p.add_argument("--freq", choices=["Q", "A"], default="Q")
-    p.add_argument("--force", action="store_true")
-    p.add_argument("--date", default=today, metavar="YYYY-MM-DD")
-    return p.parse_args()
+def build_symbol_list(symbols: List[str], slug_map: Optional[Dict[str, str]] = None) -> List[Tuple[str, str]]:
+    """Build a list of (symbol, slug) tuples using override mappings.
 
+    Args:
+        symbols: List of ticker symbols to process
+        slug_map: Optional dictionary of ticker:slug mappings to override defaults
 
-def build_symbol_list(args) -> List[Tuple[str, str]]:
-    cli_overrides = {k.upper(): v for k, v in ((pair.split(":", 1) for pair in args.slug_map) if args.slug_map else [])}
+    Returns:
+        List of (symbol, slug) tuples for processing
+    """
+    cli_overrides = {k.upper(): v for k, v in (slug_map or {}).items()}
     merged = {**FILE_OVERRIDES, **cli_overrides}
-    return [(sym, merged.get(sym.upper(), derive_slug(sym))) for sym in args.symbols]
+    return [(sym, merged.get(sym.upper(), derive_slug(sym))) for sym in symbols]
 
 
-# ───────────── main ───────────── #
-def main() -> None:
-    args = parse_args()
-    symbols = build_symbol_list(args)
-    snap_date = dt.date.fromisoformat(args.date)
+def run_macrotrends_scraper(
+    symbols: List[str],
+    pages: Optional[List[str]] = None,
+    slug_map: Optional[Dict[str, str]] = None,
+    freq: str = "Q",
+    force: bool = False,
+    date: Optional[str] = None,
+) -> None:
+    """Run the Macrotrends scraper to fetch financial data.
+
+    Args:
+        symbols: List of ticker symbols to process
+        pages: List of pages to scrape (defaults to income statement, balance sheet, etc.)
+        slug_map: Optional dictionary of ticker:slug mappings to override defaults
+        freq: Frequency of data to fetch - 'Q' for quarterly or 'A' for annual (default: 'Q')
+        force: Whether to ignore cache and force fetch from web (default: False)
+        date: Snapshot date in YYYY-MM-DD format (default: today)
+    """
+    pages = pages or DEFAULT_PAGES
+    snap_date = dt.date.fromisoformat(date) if date else dt.date.today()
+    symbols_list = build_symbol_list(symbols, slug_map)
 
     mismatches: list[Tuple[str, str]] = []
     overrides_updated = FILE_OVERRIDES.copy()
 
-    asyncio.run(scrape_many(symbols, args.pages, snap_date, args.freq, args.force, mismatches, overrides_updated))
+    asyncio.run(scrape_many(symbols_list, pages, snap_date, freq, force, mismatches, overrides_updated))
     materialise_duckdb()
 
     # persist any new overrides discovered
@@ -231,4 +225,24 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--symbols", nargs="+", required=True, metavar="TICKER")
+    parser.add_argument("--pages", nargs="+", default=DEFAULT_PAGES)
+    parser.add_argument("--slug-map", nargs="+", default=[], metavar="TICKER:slug")
+    parser.add_argument("--freq", choices=["Q", "A"], default="Q")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--date", default=dt.date.today().isoformat(), metavar="YYYY-MM-DD")
+
+    args = parser.parse_args()
+    slug_map_dict = dict(pair.split(":", 1) for pair in args.slug_map) if args.slug_map else None
+
+    run_macrotrends_scraper(
+        symbols=args.symbols,
+        pages=args.pages,
+        slug_map=slug_map_dict,
+        freq=args.freq,
+        force=args.force,
+        date=args.date
+    )
