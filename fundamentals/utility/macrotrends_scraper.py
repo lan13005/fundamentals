@@ -37,6 +37,7 @@ _RE_NON = re.compile(r"^[^a-zA-Z]*|[^a-zA-Z]*$")
 
 DEFAULT_PAGES = ["income-statement", "balance-sheet", "cash-flow-statement", "financial-ratios"]
 
+
 # ───────────── overrides I/O ───────────── #
 def load_file_overrides() -> dict[str, str]:
     if OVERRIDE_FILE.exists():
@@ -239,10 +240,5 @@ if __name__ == "__main__":
     slug_map_dict = dict(pair.split(":", 1) for pair in args.slug_map) if args.slug_map else None
 
     run_macrotrends_scraper(
-        symbols=args.symbols,
-        pages=args.pages,
-        slug_map=slug_map_dict,
-        freq=args.freq,
-        force=args.force,
-        date=args.date
+        symbols=args.symbols, pages=args.pages, slug_map=slug_map_dict, freq=args.freq, force=args.force, date=args.date
     )
