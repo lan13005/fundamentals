@@ -19,15 +19,41 @@ dependencies = [
     "pytest-tornasync>=0.6.0.post2",
     "python-dotenv>=1.1.0",
     "rich>=14.0.0",
+    "stockdex>=1.0.6",
     "yfinance>=0.2.61",
+    "ruff>=0.3.3",
+    "pre-commit>=3.6.2",
+    "nbstripout>=0.8.1",
+    "black>=25.1.0",
 ]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "B", "UP", "PL", "RUF"]
+ignore = ["N806", "RUF001", "N803", "PLR0913", "PLR2004", "RUF013", "PLR0912", "PLR0915", "B006", "E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 # not in src format ignore prompts/ folder
 [tool.setuptools.packages.find]
-where = ["."] 
-include = ["fundamentals"] 
-exclude = [] 
-namespaces = false 
+where = ["."]
+include = ["fundamentals"]
+exclude = []
+namespaces = false
 
 [project.scripts]
-fund = "scripts.fund_cli:main"
+fund = "fund_cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
