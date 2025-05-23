@@ -13,11 +13,11 @@
 # ---
 
 # +
+from typing import Any, Dict
+
 import pandas as pd
 import yfinance as yf
-from typing import Dict, Any
 from rich.console import Console
-import numpy as np
 
 company_info = pd.read_csv("yahoo_company_info_orig.csv")
 company_info = company_info.sort_values("marketCap", ascending=False).reset_index(drop=True)
@@ -46,11 +46,11 @@ company = yf.Ticker("AAPL")
 #     print(v)
 # -
 
-company.quarterly_income_stmt.columns
+# company.quarterly_income_stmt.columns
 
 # provides Ex-Dividend Dates and are not aligned with quarterly schedule
 # Would need Annualized Dividend Per Share and divide by stock price
-company.dividends
+# company.dividends
 
 # +
 # Initial Filters
@@ -91,7 +91,7 @@ drop_for_now = [
 company_info = company_info.dropna(subset=drop_for_now)
 # -
 
-company_info.columns
+# company_info.columns
 
 for col in company_info.columns:
     percent_na = company_info[col].isna().sum() / len(company_info)

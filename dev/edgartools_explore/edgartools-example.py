@@ -12,14 +12,16 @@
 #     name: python3
 # ---
 
+from pathlib import Path
+
 import edgar as et
-from rich.console import Console
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import yfinance as yf
 from jinja2 import Template
-from pathlib import Path
+from plotly.subplots import make_subplots
+from rich.console import Console
+
 import fundamentals
 
 console = Console()
@@ -165,7 +167,7 @@ template_path = f"{server_path}/templates/template.html"
 # Prepare data for template
 plotly_jinja_data = {"fig": fig.to_html(full_html=False, include_plotlyjs="cdn"), "summary": summary}
 
-with open(template_path, "r", encoding="utf-8") as template_file:
+with open(template_path, encoding="utf-8") as template_file:
     j2_template = Template(template_file.read())
     rendered_html = j2_template.render(plotly_jinja_data)
 

@@ -1,5 +1,5 @@
-from compute_metrics import compute_metrics_from_quarters
 import yfinance as yf
+from compute_metrics import compute_metrics_from_quarters
 from rich.console import Console
 from rich.table import Table
 
