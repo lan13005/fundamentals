@@ -5,34 +5,38 @@
 # Build a Sector-Industry summary from Yahoo Finance
 # classifications.
 # Outputs:
-#     1. yahoo_sector_industry_summary.csv  (three-column 
+#     1. yahoo_sector_industry_summary.csv  (three-column
 #        summary requested)
 #     2. yahoo_company_info.csv  (full line-by-line dump)
 #########################################################
 
 import io
-import requests
-import pandas as pd
-from pathlib import Path
-import yfinance as yf
 import time
+from pathlib import Path
+
+import pandas as pd
+import requests
+import yfinance as yf
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from rich.table import Table
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
 
 console = Console()
 
-# 1. Get the master ticker lists (Nasdaq Trader FTP – no login required)
+# 1. Get the master ticker lists (Nasdaq Trader FTP - no login required)
 # ##############################################################################
 
 LISTING_URLS = {
-    "nasdaqlisted": (
-        "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
-    ),
-    "otherlisted": (
-        "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
-    ),
+    "nasdaqlisted": ("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"),
+    "otherlisted": ("https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"),
 }
 
 # ---------------------------------------------------------------------------
@@ -41,76 +45,68 @@ LISTING_URLS = {
 # ---------------------------------------------------------------------------
 key_importance = {
     # --- Governance & Stewardship (quality gate) ----------------------------
-    "overallRisk":               "ISS QualityScore decile rank (1 best, 10 worst); quick proxy for governance quality and scandal risk",
-    "auditRisk":                 "Audit-committee & accounting oversight score; high values can foreshadow restatements or weak controls",
-    "boardRisk":                 "Board independence / diversity score; strong boards improve capital-allocation discipline",
-    "compensationRisk":          "Pay-for-performance alignment; mis-aligned incentives erode long-term value",
-    "shareHolderRightsRisk":     "Minority-rights protection (one-share-one-vote, no poison pill); low risk limits dilution events",
-
+    "overallRisk": "ISS QualityScore decile rank (1 best, 10 worst); quick proxy for governance quality and scandal risk",
+    "auditRisk": "Audit-committee & accounting oversight score; high values can foreshadow restatements or weak controls",
+    "boardRisk": "Board independence / diversity score; strong boards improve capital-allocation discipline",
+    "compensationRisk": "Pay-for-performance alignment; mis-aligned incentives erode long-term value",
+    "shareHolderRightsRisk": "Minority-rights protection (one-share-one-vote, no poison pill); low risk limits dilution events",
     # --- Profitability & Economic Moat --------------------------------------
-    "returnOnEquity":            "Core measure of capital efficiency; >15 % across cycles signals durable competitive advantage",
-    "returnOnAssets":            "Balance-sheet-agnostic profitability; useful cross-sector check on ROE",
-    "operatingMargins":          "Captures operating-level pricing power before unusuals; stability is key",
-    "ebitdaMargins":             "Cash-flow proxy margin; less accounting noise than net margin",
-    "grossMargins":              "Up-stream pricing power and cost moat; early warning of eroding advantage",
-    "profitMargins":             "Bottom-line (net) profitability; confirms that revenue converts to cash",
-
+    "returnOnEquity": "Core measure of capital efficiency; >15 % across cycles signals durable competitive advantage",
+    "returnOnAssets": "Balance-sheet-agnostic profitability; useful cross-sector check on ROE",
+    "operatingMargins": "Captures operating-level pricing power before unusuals; stability is key",
+    "ebitdaMargins": "Cash-flow proxy margin; less accounting noise than net margin",
+    "grossMargins": "Up-stream pricing power and cost moat; early warning of eroding advantage",
+    "profitMargins": "Bottom-line (net) profitability; confirms that revenue converts to cash",
     # --- Growth Sustainability ----------------------------------------------
-    "revenueGrowth":             "Top-line CAGR driver; must be ≥ nominal GDP for real expansion",
-    "earningsGrowth":            "Bottom-line compounding rate; confirms operating leverage",
-    "earningsQuarterlyGrowth":   "Near-term momentum signal; persistent acceleration is a tail-wind",
-    "freeCashflow":              "Fuel for reinvestment, dividends, and buy-backs; positive FCF validates accrual earnings",
-
+    "revenueGrowth": "Top-line CAGR driver; must be ≥ nominal GDP for real expansion",
+    "earningsGrowth": "Bottom-line compounding rate; confirms operating leverage",
+    "earningsQuarterlyGrowth": "Near-term momentum signal; persistent acceleration is a tail-wind",
+    "freeCashflow": "Fuel for reinvestment, dividends, and buy-backs; positive FCF validates accrual earnings",
     # --- Balance-Sheet Resilience -------------------------------------------
-    "totalCash":                 "Liquidity buffer in absolute terms",
-    "totalDebt":                 "Absolute leverage gauge; interpret with debt-to-equity",
-    "debtToEquity":              "Leverage ratio; <1 preferred for sleep-at-night safety",
-    "currentRatio":              "Short-term solvency; <1 can stress working capital during downturns",
-
+    "totalCash": "Liquidity buffer in absolute terms",
+    "totalDebt": "Absolute leverage gauge; interpret with debt-to-equity",
+    "debtToEquity": "Leverage ratio; <1 preferred for sleep-at-night safety",
+    "currentRatio": "Short-term solvency; <1 can stress working capital during downturns",
     # --- Capital-Allocation Track Record ------------------------------------
-    "dividendYield":             "Shareholder pay-out today; combine with payoutRatio for sustainability",
-    "payoutRatio":               "Earnings share returned to owners; <60 % gives reinvestment headroom",
-    "fiveYearAvgDividendYield":  "History of income return; smooths one-off spikes/cuts",
-
+    "dividendYield": "Shareholder pay-out today; combine with payoutRatio for sustainability",
+    "payoutRatio": "Earnings share returned to owners; <60 % gives reinvestment headroom",
+    "fiveYearAvgDividendYield": "History of income return; smooths one-off spikes/cuts",
     # --- Valuation vs. Quality (entry discipline) ---------------------------
-    "forwardPE":                 "Price vs. next-year EPS forecast; embeds market expectations (forward-looking)",
-    "trailingPE":                "Price vs. TTM EPS; backward-looking baseline",
-    "priceToBook":               "Asset-based value gauge; useful for financials & cyclicals",
-    "priceToSalesTrailing12Months":"Sales multiple; helpful when earnings are depressed",
-    "enterpriseToEbitda":        "Capital-structure-neutral multiple; handy for cross-sector comps",
-    "trailingPegRatio":          "PEG based on trailing EPS and forecast growth; screens growth-at-reasonable-price",
-
+    "forwardPE": "Price vs. next-year EPS forecast; embeds market expectations (forward-looking)",
+    "trailingPE": "Price vs. TTM EPS; backward-looking baseline",
+    "priceToBook": "Asset-based value gauge; useful for financials & cyclicals",
+    "priceToSalesTrailing12Months": "Sales multiple; helpful when earnings are depressed",
+    "enterpriseToEbitda": "Capital-structure-neutral multiple; handy for cross-sector comps",
+    "trailingPegRatio": "PEG based on trailing EPS and forecast growth; screens growth-at-reasonable-price",
     # --- Ownership & Liquidity ----------------------------------------------
-    "heldPercentInsiders":       "Management skin-in-the-game; higher = better alignment",
-    "heldPercentInstitutions":   "Institutional sponsorship; low values may imply under-researched 'value' pockets",
-    "marketCap":                 "Size proxy; informs liquidity and index inclusion",
-    "beta":                      "Historical volatility vs. market; helps size positions within a momentum overlay",
-
+    "heldPercentInsiders": "Management skin-in-the-game; higher = better alignment",
+    "heldPercentInstitutions": "Institutional sponsorship; low values may imply under-researched 'value' pockets",
+    "marketCap": "Size proxy; informs liquidity and index inclusion",
+    "beta": "Historical volatility vs. market; helps size positions within a momentum overlay",
     # --- Holistic Valuation Context -----------------------------------------
-    "enterpriseValue":           "Total operating valuation incl. debt & cash; cross-capital-structure metric"
+    "enterpriseValue": "Total operating valuation incl. debt & cash; cross-capital-structure metric",
 }
+
 
 def load_tickers(market_categories=None, exclude_etf=True, min_round_lot=100, max_tickers=None):
     dfs = []
-    for name, url in LISTING_URLS.items():
+    for _name, url in LISTING_URLS.items():
         txt = requests.get(url, timeout=30).text
-        txt_clean = "\n".join(
-            line for line in txt.splitlines() if not line.startswith("File Creation Time")
-        )
+        txt_clean = "\n".join(line for line in txt.splitlines() if not line.startswith("File Creation Time"))
         df = pd.read_csv(io.StringIO(txt_clean), sep="|")
         symcol = "Symbol" if "Symbol" in df.columns else "ACT Symbol"
         # Apply filters
-        if 'Market Category' in df.columns:
+        if "Market Category" in df.columns:
             if market_categories:
-                df = df[df['Market Category'].isin(market_categories)]
-        if 'ETF' in df.columns and exclude_etf:
-            df = df[df['ETF'] != 'Y']
-        if 'Round Lot Size' in df.columns:
-            df = df[df['Round Lot Size'] >= min_round_lot]
-        if 'Test Issue' in df.columns:
-            df = df[df['Test Issue'] != 'Y']
-        if 'NextShares' in df.columns:
-            df = df[df['NextShares'] != 'Y']
+                df = df[df["Market Category"].isin(market_categories)]
+        if "ETF" in df.columns and exclude_etf:
+            df = df[df["ETF"] != "Y"]
+        if "Round Lot Size" in df.columns:
+            df = df[df["Round Lot Size"] >= min_round_lot]
+        if "Test Issue" in df.columns:
+            df = df[df["Test Issue"] != "Y"]
+        if "NextShares" in df.columns:
+            df = df[df["NextShares"] != "Y"]
         dfs.append(df[[symcol]].rename(columns={symcol: "ticker"}))
     master = pd.concat(dfs, ignore_index=True).drop_duplicates()
     master["ticker"] = master["ticker"].str.upper()
@@ -119,8 +115,10 @@ def load_tickers(market_categories=None, exclude_etf=True, min_round_lot=100, ma
         tickers = tickers[:max_tickers]
     return tickers
 
+
 # 2. Pull Yahoo Finance metadata in batches (to respect rate limits)
 # ##############################################################################
+
 
 def fetch_yahoo_metadata(tickers, key_importance):
     """
@@ -165,8 +163,12 @@ def fetch_yahoo_metadata(tickers, key_importance):
                     continue
                 key = (sector, industry)
                 if key not in sector_industry_counts:
-                    sector_industry_counts[key] = {'requested': 0, 'loaded': 0, 'failed': 0}
-                sector_industry_counts[key]['loaded'] += 1
+                    sector_industry_counts[key] = {
+                        "requested": 0,
+                        "loaded": 0,
+                        "failed": 0,
+                    }
+                sector_industry_counts[key]["loaded"] += 1
                 record = {
                     "ticker": tk,
                     "company": info.get("shortName", ""),
@@ -190,13 +192,18 @@ def fetch_yahoo_metadata(tickers, key_importance):
                         pass
                 key = (sector, industry) if sector and industry else ("Unknown", "Unknown")
                 if key not in sector_industry_counts:
-                    sector_industry_counts[key] = {'requested': 0, 'loaded': 0, 'failed': 0}
-                sector_industry_counts[key]['requested'] += 1
+                    sector_industry_counts[key] = {
+                        "requested": 0,
+                        "loaded": 0,
+                        "failed": 0,
+                    }
+                sector_industry_counts[key]["requested"] += 1
                 if tk in failed_tickers:
-                    sector_industry_counts[key]['failed'] += 1
+                    sector_industry_counts[key]["failed"] += 1
             progress.update(task, advance=len(batch))
             time.sleep(PAUSE)
     return records, failed_tickers, sector_industry_counts
+
 
 def format_dataframe_for_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -207,19 +214,23 @@ def format_dataframe_for_csv(df: pd.DataFrame) -> pd.DataFrame:
         if pd.api.types.is_float_dtype(df_out[col]):
             # If all values are integer-like, cast to int
             if (df_out[col].dropna() % 1 == 0).all():
-                df_out[col] = df_out[col].dropna().astype('Int64')
+                df_out[col] = df_out[col].dropna().astype("Int64")
             else:
                 df_out[col] = df_out[col].map(lambda x: f"{x:.4f}" if pd.notnull(x) else x)
     return df_out
+
 
 def get_top_companies_by_marketcap(df: pd.DataFrame, n=3) -> pd.Series:
     """
     For each sector-industry, return the top n tickers by market cap as a comma-separated string.
     """
+
     def top_n(group):
         sorted_group = group.sort_values("marketCap", ascending=False)
         return ", ".join(sorted_group["ticker"].head(n).astype(str))
+
     return top_n
+
 
 def human_format(num):
     """
@@ -232,13 +243,14 @@ def human_format(num):
     if num is None or pd.isna(num):
         return "N/A"
     num = float(num)
-    for unit in ['', 'K', 'M', 'B', 'T']:
+    for unit in ["", "K", "M", "B", "T"]:
         if abs(num) < 1000.0:
-            if unit == '':
+            if unit == "":
                 return f"{num:.0f}"
             return f"{num:.1f}{unit}"
         num /= 1000.0
     return f"{num:.1f}P"  # For numbers >= 1 quadrillion
+
 
 def build_sector_industry_summary(df_full: pd.DataFrame, n_examples=3) -> pd.DataFrame:
     """
@@ -248,11 +260,18 @@ def build_sector_industry_summary(df_full: pd.DataFrame, n_examples=3) -> pd.Dat
     df_full["sector_industry"] = df_full["sector"] + " - " + df_full["industry"]
     summary = (
         df_full.groupby("sector_industry")
-        .apply(lambda g: pd.Series({
-            "Example Companies": ", ".join(g.sort_values("marketCap", ascending=False)["ticker"].head(n_examples).astype(str)),
-            "Number of Companies": g["ticker"].count(),
-            "Total Market Cap": g["marketCap"].sum() if "marketCap" in g else 0
-        }), include_groups=False)
+        .apply(
+            lambda g: pd.Series(
+                {
+                    "Example Companies": ", ".join(
+                        g.sort_values("marketCap", ascending=False)["ticker"].head(n_examples).astype(str)
+                    ),
+                    "Number of Companies": g["ticker"].count(),
+                    "Total Market Cap": g["marketCap"].sum() if "marketCap" in g else 0,
+                }
+            ),
+            include_groups=False,
+        )
         .reset_index()
         .rename(columns={"sector_industry": "Sector - Industry"})
         .sort_values("Number of Companies", ascending=False)
@@ -260,6 +279,7 @@ def build_sector_industry_summary(df_full: pd.DataFrame, n_examples=3) -> pd.Dat
     # Format Total Market Cap as human readable for display and CSV
     summary["Total Market Cap"] = summary["Total Market Cap"].apply(human_format)
     return summary
+
 
 def print_sector_industry_table(summary: pd.DataFrame):
     table = Table(title="Sector-Industry Summary", show_lines=True)
@@ -272,16 +292,12 @@ def print_sector_industry_table(summary: pd.DataFrame):
             str(row["Sector - Industry"]),
             str(row["Example Companies"]),
             str(row["Number of Companies"]),
-            str(row["Total Market Cap"]) if pd.notnull(row['Total Market Cap']) else "N/A"
+            str(row["Total Market Cap"]) if pd.notnull(row["Total Market Cap"]) else "N/A",
         )
     console.print(table)
 
-def get_sector_industry_summary(
-    market_category=['Q', 'G'],
-    exclude_etf=True,
-    min_round_lot=100,
-    max_tickers=None
-):
+
+def get_sector_industry_summary(market_category=["Q", "G"], exclude_etf=True, min_round_lot=100, max_tickers=None):
     """
     Build a Sector-Industry summary from Yahoo Finance classifications and write CSV outputs.
     Args:
@@ -292,15 +308,20 @@ def get_sector_industry_summary(
     Returns:
         pd.DataFrame: The summary DataFrame
     """
-    console.print(Panel("[bold cyan]Fetching tickers with filters:[/bold cyan]\n"
-                            f"Market Category: {market_category}\n"
-                            f"Exclude ETF: {exclude_etf}\n"
-                            f"Min Round Lot: {min_round_lot}", title="[bold green]Ticker Loader Filters"))
+    console.print(
+        Panel(
+            "[bold cyan]Fetching tickers with filters:[/bold cyan]\n"
+            f"Market Category: {market_category}\n"
+            f"Exclude ETF: {exclude_etf}\n"
+            f"Min Round Lot: {min_round_lot}",
+            title="[bold green]Ticker Loader Filters",
+        )
+    )
     tickers = load_tickers(
         market_categories=market_category,
         exclude_etf=exclude_etf,
         min_round_lot=min_round_lot,
-        max_tickers=max_tickers
+        max_tickers=max_tickers,
     )
     console.print(f"[bold yellow]Fetched {len(tickers):,} U.S.-listed tickers after filtering[/bold yellow]")
     records, failed_tickers, sector_industry_counts = fetch_yahoo_metadata(tickers, key_importance)
@@ -313,7 +334,12 @@ def get_sector_industry_summary(
     total_loaded = len(records)
     total_requested = len(tickers)
     percent_loaded = 100.0 * total_loaded / total_requested if total_requested else 0
-    console.print(Panel(f"[bold green]Loaded {total_loaded:,} / {total_requested:,} tickers ({percent_loaded:.2f}%) successfully.[/bold green]", title="[bold cyan]Overall Load Success"))
+    console.print(
+        Panel(
+            f"[bold green]Loaded {total_loaded:,} / {total_requested:,} tickers ({percent_loaded:.2f}%) successfully.[/bold green]",
+            title="[bold cyan]Overall Load Success",
+        )
+    )
     # Per sector/industry
     table = Table(title="Per Sector/Industry Load Stats", show_lines=True)
     table.add_column("Sector")
@@ -322,7 +348,13 @@ def get_sector_industry_summary(
     table.add_column("Loaded", justify="right")
     table.add_column("Failed", justify="right")
     for (sector, industry), stats in sector_industry_counts.items():
-        table.add_row(str(sector), str(industry), str(stats['requested']), str(stats['loaded']), str(stats['failed']))
+        table.add_row(
+            str(sector),
+            str(industry),
+            str(stats["requested"]),
+            str(stats["loaded"]),
+            str(stats["failed"]),
+        )
     console.print(table)
     print_sector_industry_table(summary)
     console.print("\n✔ Done!  Files written:")

@@ -1,16 +1,18 @@
 import glob
-from pathlib import Path
 import shutil
+from pathlib import Path
+
 from rich.console import Console
 
 console = Console()
 
 ################################################################
 # Cursor annoying takes forever to render .mdc files and setting
-# vscode's files.associations" to attempt rendering as .md file 
-# does not work. It still renders it as .mdc. This script swaps 
+# vscode's files.associations" to attempt rendering as .md file
+# does not work. It still renders it as .mdc. This script swaps
 # the .mdc and .md files whenever called
 ################################################################
+
 
 def swap_mdc():
     """

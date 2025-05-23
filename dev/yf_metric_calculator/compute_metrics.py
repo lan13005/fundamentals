@@ -17,14 +17,24 @@ import pandas as pd
 import yfinance as yf
 from typing import Dict, Any
 from rich.console import Console
+import numpy as np
 
 company_info = pd.read_csv("yahoo_company_info_orig.csv")
-company_info = company_info.sort_values('marketCap', ascending=False).reset_index(drop=True)
+company_info = company_info.sort_values("marketCap", ascending=False).reset_index(drop=True)
 
 # This should be removed once we recreate our initial csv
 # yfinance growth metrics kinda suck?
-remove_keys = ['pegRatio', 'overallRisk', 'auditRisk', 'boardRisk', 'compensationRisk', 'shareHolderRightsRisk', 
-                'revenueGrowth', 'earningsGrowth', 'earningsQuarterlyGrowth']
+remove_keys = [
+    "pegRatio",
+    "overallRisk",
+    "auditRisk",
+    "boardRisk",
+    "compensationRisk",
+    "shareHolderRightsRisk",
+    "revenueGrowth",
+    "earningsGrowth",
+    "earningsQuarterlyGrowth",
+]
 company_info = company_info.drop(remove_keys, axis=1)
 
 # +
@@ -40,7 +50,7 @@ company.quarterly_income_stmt.columns
 
 # provides Ex-Dividend Dates and are not aligned with quarterly schedule
 # Would need Annualized Dividend Per Share and divide by stock price
-company.dividends 
+company.dividends
 
 # +
 # Initial Filters
@@ -53,19 +63,31 @@ company.dividends
 #   Therefore a negative EPS is meaningless for this question.
 #   We should probably calculate this
 # - forwardPE can also be NaN if expected future EPS if <= 0.
-drop_na = ['company', 'returnOnEquity', 'returnOnAssets', 'marketCap',
-           'heldPercentInsiders', 'heldPercentInstitutions', 'trailingPE']
+drop_na = [
+    "company",
+    "returnOnEquity",
+    "returnOnAssets",
+    "marketCap",
+    "heldPercentInsiders",
+    "heldPercentInstitutions",
+    "trailingPE",
+]
 company_info = company_info.dropna(subset=drop_na)
 
 # yfinance sets dividendYield to NaN even though 0 makes perfect sense
-company_info['dividendYield'] = company_info['dividendYield'].fillna(0)
-company_info['fiveYearAvgDividendYield'] = company_info['fiveYearAvgDividendYield'].fillna(0)
+company_info["dividendYield"] = company_info["dividendYield"].fillna(0)
+company_info["fiveYearAvgDividendYield"] = company_info["fiveYearAvgDividendYield"].fillna(0)
 
 # - freeCashflow can have a lot of NaNs ()
 # - enterpriseToEbitda also has a lot of NaNs, Remove metric
-drop_for_now = ['freeCashflow', 'enterpriseToEbitda', 'debtToEquity', # important to calculate but lots missing
-                'beta', # somewhat important but ARM is somehow missing
-                'forwardPE', 'payoutRatio']
+drop_for_now = [
+    "freeCashflow",
+    "enterpriseToEbitda",
+    "debtToEquity",  # important to calculate but lots missing
+    "beta",  # somewhat important but ARM is somehow missing
+    "forwardPE",
+    "payoutRatio",
+]
 company_info = company_info.dropna(subset=drop_for_now)
 # -
 
@@ -75,9 +97,30 @@ for col in company_info.columns:
     percent_na = company_info[col].isna().sum() / len(company_info)
     print(f"{col} has {percent_na:0.5f} NaN rows")
 
-company_info[company_info['beta'].isna()]
+company_info[company_info["beta"].isna()]
 
-company_info.query('marketCap >= 1_000_000_000')
+company_info.query("marketCap >= 1_000_000_000")
+
+
+def compute_cagr(end_value: float, start_value: float, periods: float) -> float:
+    """
+    Compute Compound Annual Growth Rate (CAGR).
+
+    Args:
+        end_value (float): Final value
+        start_value (float): Initial value
+        periods (float): Number of periods (years)
+
+    Returns:
+        float: CAGR as a decimal (e.g., 0.15 for 15% growth)
+    """
+    if start_value == 0 or end_value == 0:
+        return 0
+    try:
+        return (abs(end_value) / abs(start_value)) ** (1 / periods) - 1
+    except Exception:
+        return 0
+
 
 def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     """
@@ -92,10 +135,22 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     console = Console()
     company = yf.Ticker(ticker)
     try:
-        income = company.quarterly_income_stmt
-        balance = company.quarterly_balance_sheet
-        cashflow = company.quarterly_cashflow
+        quarterly_income = company.quarterly_income_stmt
+        quarterly_balance = company.quarterly_balance_sheet
+        quarterly_cashflow = company.quarterly_cashflow
         dividends = company.dividends
+
+        # Get annual statements for growth calculations
+        annual_income = company.income_stmt
+
+        console.log("[blue]Available metrics in quarterly quarterly_income statement:[/blue]")
+        console.log(quarterly_income.index.tolist())
+        console.log("\n[blue]Available metrics in annual quarterly_income statement:[/blue]")
+        console.log(annual_income.index.tolist())
+
+        if "Basic EPS" in annual_income.index:
+            eps_vals = annual_income.loc["Basic EPS"].values
+            console.log(f"\n[blue]Annual Basic EPS values: {eps_vals}[/blue]")
     except Exception as e:
         console.log(f"[red]Failed to load statements: {e}[/red]")
         return {"error": f"Failed to load statements: {e}"}
@@ -136,33 +191,37 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     # Get latest close price and shares outstanding
     hist = company.history(period="5d")
     price = float(hist["Close"].iloc[-1])
-    shares_out = safe_get(balance, ["Ordinary Shares Number", "Share Issued"])
+    shares_out = safe_get(quarterly_balance, ["Ordinary Shares Number", "Share Issued"])
     shares_out = float(shares_out)
     market_cap = price * shares_out
 
     # TTM values (use all plausible keys in order of preference)
-    ttm_net_income = safe_ttm(income, [
-        "Net Income", "Net Income Common Stockholders", "Net Income Including Noncontrolling Interests"])
-    ttm_equity = safe_get(balance, [
-        "Common Stock Equity", "Stockholders Equity", "Total Equity Gross Minority Interest"])
-    ttm_total_assets = safe_get(balance, ["Total Assets"])
-    ttm_op_income = safe_ttm(income, ["Operating Income"])
-    ttm_revenue = safe_ttm(income, ["Total Revenue", "Operating Revenue"])
-    ttm_ebitda = safe_ttm(income, ["EBITDA"])
-    ttm_gross_profit = safe_ttm(income, ["Gross Profit"])
-    ttm_op_cf = safe_ttm(cashflow, ["Operating Cash Flow"])
-    ttm_capex = safe_ttm(cashflow, ["Capital Expenditure"])
-    ttm_dividends_paid = safe_ttm(cashflow, ["Cash Dividends Paid", "Common Stock Dividend Paid"])
-    total_cash = safe_get(balance, ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"])
-    total_debt = safe_get(balance, ["Total Debt"])
-    current_assets = safe_get(balance, ["Current Assets"])
-    current_liabilities = safe_get(balance, ["Current Liabilities"])
+    ttm_net_income = safe_ttm(
+        quarterly_income, ["Net Income Common Stockholders", "Diluted NI Availto Com Stockholders", "Net Income"]
+    )
+    ttm_equity = safe_get(
+        quarterly_balance, ["Common Stock Equity", "Stockholders Equity", "Total Equity Gross Minority Interest"]
+    )
+    ttm_total_assets = safe_get(quarterly_balance, ["Total Assets"])
+    ttm_op_income = safe_ttm(quarterly_income, ["Operating Income"])
+    ttm_revenue = safe_ttm(quarterly_income, ["Total Revenue", "Operating Revenue"])
+    ttm_ebitda = safe_ttm(quarterly_income, ["EBITDA"])
+    ttm_gross_profit = safe_ttm(quarterly_income, ["Gross Profit"])
+    ttm_op_cf = safe_ttm(quarterly_cashflow, ["Operating Cash Flow"])
+    ttm_capex = safe_ttm(quarterly_cashflow, ["Capital Expenditure"])
+    ttm_dividends_paid = safe_ttm(quarterly_cashflow, ["Cash Dividends Paid", "Common Stock Dividend Paid"])
+    total_cash = safe_get(
+        quarterly_balance, ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"]
+    )
+    total_debt = safe_get(quarterly_balance, ["Total Debt"])
+    current_assets = safe_get(quarterly_balance, ["Current Assets"])
+    current_liabilities = safe_get(quarterly_balance, ["Current Liabilities"])
 
     metrics = {}
     # --- Profitability & Economic Moat ---
     metrics["returnOnEquity"] = ttm_net_income / ttm_equity
     try:
-        assets_vals = balance.loc["Total Assets"].values[:5]
+        assets_vals = quarterly_balance.loc["Total Assets"].values[:5]
         avg_assets = sum(assets_vals) / len(assets_vals)
     except Exception:
         avg_assets = ttm_total_assets
@@ -172,22 +231,26 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     metrics["grossMargins"] = ttm_gross_profit / ttm_revenue
     metrics["profitMargins"] = ttm_net_income / ttm_revenue
 
-    # --- Growth Sustainability ---
-    def yoy_growth(df, keys):
-        if isinstance(keys, str):
-            keys = [keys]
-        for key in keys:
-            try:
-                vals = df.loc[key].values
-                # Compare most recent quarter to same quarter a year ago (4 quarters back)
-                if len(vals) >= 5 and vals[4] != 0:
-                    return (vals[0] - vals[4]) / abs(vals[4])
-            except Exception:
-                continue
-        return 0
-    metrics["revenueGrowth"] = yoy_growth(income, ["Total Revenue", "Operating Revenue"])
-    metrics["earningsGrowth"] = yoy_growth(income, ["Net Income", "Net Income Common Stockholders", "Net Income Including Noncontrolling Interests"])
-    metrics["earningsQuarterlyGrowth"] = metrics["earningsGrowth"]
+    # Growth metrics using CAGR
+    # For quarterly metrics, we use 1 year (4 quarters) as the period
+    # Revenue growth - using quarterly data over 1 year
+    _tr = annual_income.loc["Total Revenue"]
+    metrics["revenueGrowth"] = compute_cagr(_tr[0], _tr[3], 3)  # 3 year CAGR
+
+    # Earnings growth - using Basic EPS from annual data
+
+    # DO NOT DELETE THIS BLOCK
+    # Option 1: Using quarterly data like so matches yfinance
+    #           Choose to go with CAGR with longest period possible
+    #           which is 4 years
+    # _beps = quarterly_income.loc['Basic EPS']
+    # metrics["earningsGrowth"] = (_beps[0] - _beps[4]) / _beps[4]
+    _beps = annual_income.loc["Basic EPS"]
+    metrics["earningsGrowth"] = compute_cagr(_beps[0], _beps[3], 3)
+
+    _net_income = annual_income.loc["Net Income"]
+    metrics["earningsQuarterlyGrowth"] = compute_cagr(_net_income[0], _net_income[3], 3)
+
     metrics["freeCashflow"] = ttm_op_cf + ttm_capex
 
     # --- Balance-Sheet Resilience ---
@@ -198,7 +261,7 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
 
     # --- Capital-Allocation Track Record ---
     if not dividends.empty and price != 0:
-        annual_div = dividends[-4:].sum()
+        annual_div = dividends[-4:].sum()  # last 4 quarters
         metrics["dividendYield"] = (annual_div / price) * 100
         # 5yr avg dividend yield: use last 20 dividends (approx 5 years)
         fiveyr_div = dividends[-20:].sum()
@@ -225,10 +288,7 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     metrics["enterpriseValue"] = enterprise_value
     metrics["enterpriseToEbitda"] = enterprise_value / ttm_ebitda
     # PEG ratio: trailingPE / (100 * earningsGrowth) (earningsGrowth as YoY fraction)
-    if metrics["earningsGrowth"]:
-        metrics["trailingPegRatio"] = metrics["trailingPE"] / (100 * metrics["earningsGrowth"])
-    else:
-        metrics["trailingPegRatio"] = 0
+    metrics["trailingPegRatio"] = metrics["trailingPE"] / (100 * metrics["earningsGrowth"])
 
     # --- Ownership & Liquidity ---
     # IMPORTANT: DO NOT MODIFY BELOW THIS LINE

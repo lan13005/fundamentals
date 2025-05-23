@@ -6,44 +6,62 @@
 #       sim_market_histogram.png
 ###########################################################
 
-import numpy as np
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich import box
-import matplotlib.pyplot as plt
 import os
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
+
+import matplotlib.pyplot as plt
+import numpy as np
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
+from rich.table import Table
 
 # Parameters (hyperparameters)
 weekly_contrib = 100  # Weekly contribution in dollars (Constant)
-years = 2            # Investment duration in years (Constant)
-weeks = years * 52    # Total number of weeks (Constant)
+years = 2  # Investment duration in years (Constant)
+weeks = years * 52  # Total number of weeks (Constant)
 
 # Growth rates (lognormal, parameters are for the underlying normal log-returns)
-index_annual_mean = 0.07       # Mean annualized return for index ETF (Lognormal, mean=7%)
-index_annual_sigma = 0.15      # Annualized volatility for index ETF (Lognormal, sigma=15%)
-momentum_annual_mean = 0.09    # Mean annualized return for momentum basket (Lognormal, mean=9%)
-momentum_annual_sigma = 0.20   # Annualized volatility for momentum basket (Lognormal, sigma=20%)
+index_annual_mean = 0.07  # Mean annualized return for index ETF (Lognormal, mean=7%)
+index_annual_sigma = 0.15  # Annualized volatility for index ETF (Lognormal, sigma=15%)
+momentum_annual_mean = 0.09  # Mean annualized return for momentum basket (Lognormal, mean=9%)
+momentum_annual_sigma = 0.20  # Annualized volatility for momentum basket (Lognormal, sigma=20%)
 
 # ETF cost parameters (you can free the std also but why)
-etf_half_spread_mean = 0.00010     # ETF half-spread per trade (Constant, 1bp)
-etf_half_spread_sigma = 0.0        # ETF half-spread stddev (Constant)
-etf_expense_annual_mean = 0.0003   # ETF annual expense ratio (Constant, 0.03%)
-etf_expense_annual_sigma = 0.0     # ETF expense ratio stddev (Constant)
+etf_half_spread_mean = 0.00010  # ETF half-spread per trade (Constant, 1bp)
+etf_half_spread_sigma = 0.0  # ETF half-spread stddev (Constant)
+etf_expense_annual_mean = 0.0003  # ETF annual expense ratio (Constant, 0.03%)
+etf_expense_annual_sigma = 0.0  # ETF expense ratio stddev (Constant)
 
 # Stock basket cost parameters
-stock_half_spread_mean = 0.0004    # Stock basket half-spread per trade (Normal, mean=4bp)
-stock_half_spread_sigma = 0.0001   # Stock basket half-spread stddev (Normal, sigma=1bp)
-purge_fraction_mean = 0.50         # Fraction of portfolio purged each time (Normal, mean=50%)
-purge_fraction_sigma = 0.10        # Purge fraction stddev (Normal, sigma=10%)
-purge_interval = 26                # Weeks between portfolio purges (Constant, 6 months)
+stock_half_spread_mean = 0.0004  # Stock basket half-spread per trade (Normal, mean=4bp)
+stock_half_spread_sigma = 0.0001  # Stock basket half-spread stddev (Normal, sigma=1bp)
+purge_fraction_mean = 0.50  # Fraction of portfolio purged each time (Normal, mean=50%)
+purge_fraction_sigma = 0.10  # Purge fraction stddev (Normal, sigma=10%)
+purge_interval = 26  # Weeks between portfolio purges (Constant, 6 months)
 
 n_sim = 5000  # Number of Monte Carlo runs (Constant)
 
 rng = np.random.default_rng()
 
-def simulate(strategy: str, weekly_logret_mean: float, weekly_logret_sigma: float, etf_half_spread: float, etf_expense_weekly: float, stock_half_spread: float, stock_roundtrip: float, purge_fraction: float) -> tuple[float, float, float]:
+
+def simulate(
+    strategy: str,
+    weekly_logret_mean: float,
+    weekly_logret_sigma: float,
+    etf_half_spread: float,
+    etf_expense_weekly: float,
+    stock_half_spread: float,
+    stock_roundtrip: float,
+    purge_fraction: float,
+) -> tuple[float, float, float]:
     """
     Simulate the growth of a portfolio using either an ETF or a momentum stock basket.
     Args:
@@ -70,7 +88,7 @@ def simulate(strategy: str, weekly_logret_mean: float, weekly_logret_sigma: floa
         # Sample a new weekly log-return
         logret = rng.normal(weekly_logret_mean, weekly_logret_sigma)
         weekly_growth = np.expm1(logret)
-        value *= (1 + weekly_growth)
+        value *= 1 + weekly_growth
         if strategy == "ETF":
             f = value * etf_expense_weekly
             value -= f
@@ -81,6 +99,7 @@ def simulate(strategy: str, weekly_logret_mean: float, weekly_logret_sigma: floa
             value -= cost
             spread += cost
     return value, spread, fee
+
 
 def run_monte_carlo():
     etf_vals, etf_spreads, etf_fees = [], [], []
@@ -112,19 +131,42 @@ def run_monte_carlo():
             purge_fraction = max(0, rng.normal(purge_fraction_mean, purge_fraction_sigma))
             # Simulate ETF
             etf_val, etf_spread, etf_fee = simulate(
-                "ETF", index_weekly_logret_mean, index_weekly_logret_sigma, etf_half_spread, etf_expense_weekly, stock_half_spread, stock_roundtrip, purge_fraction)
+                "ETF",
+                index_weekly_logret_mean,
+                index_weekly_logret_sigma,
+                etf_half_spread,
+                etf_expense_weekly,
+                stock_half_spread,
+                stock_roundtrip,
+                purge_fraction,
+            )
             etf_vals.append(etf_val)
             etf_spreads.append(etf_spread)
             etf_fees.append(etf_fee)
             # Simulate Momentum
             mom_val, mom_spread, mom_fee = simulate(
-                "Stock", momentum_weekly_logret_mean, momentum_weekly_logret_sigma, etf_half_spread, etf_expense_weekly, stock_half_spread, stock_roundtrip, purge_fraction)
+                "Stock",
+                momentum_weekly_logret_mean,
+                momentum_weekly_logret_sigma,
+                etf_half_spread,
+                etf_expense_weekly,
+                stock_half_spread,
+                stock_roundtrip,
+                purge_fraction,
+            )
             mom_vals.append(mom_val)
             mom_spreads.append(mom_spread)
             mom_fees.append(mom_fee)
             progress.update(task, advance=1)
-    return (np.array(etf_vals), np.array(etf_spreads), np.array(etf_fees),
-            np.array(mom_vals), np.array(mom_spreads), np.array(mom_fees))
+    return (
+        np.array(etf_vals),
+        np.array(etf_spreads),
+        np.array(etf_fees),
+        np.array(mom_vals),
+        np.array(mom_spreads),
+        np.array(mom_fees),
+    )
+
 
 def median_and_sigma_pm(arr):
     med = np.median(arr)
@@ -132,19 +174,22 @@ def median_and_sigma_pm(arr):
     p84 = np.percentile(arr, 84)
     return p16, med, p84
 
+
 def fmt_pm(p16, med, p84, prec=2):
     return f"${p16:,.{prec}f} | ${med:,.{prec}f} | ${p84:,.{prec}f}"
 
+
 def modern_hist(ax, data, bins, label, color):
-    counts, edges, patches = ax.hist(data, bins=bins, histtype='step', linewidth=2, color=color, label=label)
+    counts, edges, patches = ax.hist(data, bins=bins, histtype="step", linewidth=2, color=color, label=label)
     ax.stairs(counts, edges, color=color, linewidth=2)
-    ax.set_xlabel('Ending Value ($)')
-    ax.set_ylabel('Simulations')
+    ax.set_xlabel("Ending Value ($)")
+    ax.set_ylabel("Simulations")
     ax.grid(True, alpha=0.3)
     ax.legend()
     for spine in ax.spines.values():
         spine.set_linewidth(1.5)
     return counts, edges
+
 
 def run_etf_vs_momentum_simulation():
     """
@@ -155,18 +200,41 @@ def run_etf_vs_momentum_simulation():
     console.rule("[bold blue]ETF vs. Momentum Basket Spread Simulation (Monte Carlo)")
 
     # Emphasize hyperparameters
-    hyper_table = Table(title="Simulation Hyperparameters", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    hyper_table = Table(
+        title="Simulation Hyperparameters",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
     hyper_table.add_column("Parameter", style="cyan", no_wrap=True)
     hyper_table.add_column("Value", style="yellow")
     hyper_table.add_row("Weekly Contribution", f"${weekly_contrib}")
     hyper_table.add_row("Years", str(years))
-    hyper_table.add_row("Index Annual Return (mean ± σ)", f"{index_annual_mean*100:.2f}% ± {index_annual_sigma*100:.2f}%")
-    hyper_table.add_row("Momentum Annual Return (mean ± σ)", f"{momentum_annual_mean*100:.2f}% ± {momentum_annual_sigma*100:.2f}%")
-    hyper_table.add_row("ETF Half-Spread (mean ± σ)", f"{etf_half_spread_mean*100:.3f}% ± {etf_half_spread_sigma*100:.3f}%")
-    hyper_table.add_row("ETF Expense Ratio (Annual, mean ± σ)", f"{etf_expense_annual_mean*100:.3f}% ± {etf_expense_annual_sigma*100:.3f}%")
-    hyper_table.add_row("Stock Half-Spread (mean ± σ)", f"{stock_half_spread_mean*100:.3f}% ± {stock_half_spread_sigma*100:.3f}%")
+    hyper_table.add_row(
+        "Index Annual Return (mean ± σ)",
+        f"{index_annual_mean*100:.2f}% ± {index_annual_sigma*100:.2f}%",
+    )
+    hyper_table.add_row(
+        "Momentum Annual Return (mean ± σ)",
+        f"{momentum_annual_mean*100:.2f}% ± {momentum_annual_sigma*100:.2f}%",
+    )
+    hyper_table.add_row(
+        "ETF Half-Spread (mean ± σ)",
+        f"{etf_half_spread_mean*100:.3f}% ± {etf_half_spread_sigma*100:.3f}%",
+    )
+    hyper_table.add_row(
+        "ETF Expense Ratio (Annual, mean ± σ)",
+        f"{etf_expense_annual_mean*100:.3f}% ± {etf_expense_annual_sigma*100:.3f}%",
+    )
+    hyper_table.add_row(
+        "Stock Half-Spread (mean ± σ)",
+        f"{stock_half_spread_mean*100:.3f}% ± {stock_half_spread_sigma*100:.3f}%",
+    )
     hyper_table.add_row("Purge Interval (weeks)", str(purge_interval))
-    hyper_table.add_row("Purge Fraction (mean ± σ)", f"{purge_fraction_mean*100:.1f}% ± {purge_fraction_sigma*100:.1f}%")
+    hyper_table.add_row(
+        "Purge Fraction (mean ± σ)",
+        f"{purge_fraction_mean*100:.1f}% ± {purge_fraction_sigma*100:.1f}%",
+    )
     console.print(hyper_table)
 
     # Run Monte Carlo simulations
@@ -178,12 +246,17 @@ def run_etf_vs_momentum_simulation():
     mom_val_minus, mom_val_med, mom_val_plus = median_and_sigma_pm(mom_vals)
     mom_spread_minus, mom_spread_med, mom_spread_plus = median_and_sigma_pm(mom_spreads)
     mom_fee_minus, mom_fee_med, mom_fee_plus = median_and_sigma_pm(mom_fees)
-    
+
     net_vs_etf = mom_vals - etf_vals
     net_vs_etf_minus, net_vs_etf_med, net_vs_etf_plus = median_and_sigma_pm(net_vs_etf)
 
     # Prepare results table
-    results_table = Table(title="Simulation Results (-σ | Median | +σ)", box=box.ROUNDED, show_header=True, header_style="bold green")
+    results_table = Table(
+        title="Simulation Results (-σ | Median | +σ)",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold green",
+    )
     results_table.add_column("Strategy", style="bold", min_width=22)
     results_table.add_column("Ending Value", justify="right", min_width=28)
     results_table.add_column("Total Spread ($)", justify="right", min_width=28)
@@ -194,14 +267,14 @@ def run_etf_vs_momentum_simulation():
         fmt_pm(etf_val_minus, etf_val_med, etf_val_plus),
         fmt_pm(etf_spread_minus, etf_spread_med, etf_spread_plus),
         fmt_pm(etf_fee_minus, etf_fee_med, etf_fee_plus),
-        fmt_pm(0, 0, 0)
+        fmt_pm(0, 0, 0),
     )
     results_table.add_row(
         "Momentum basket (9%)",
         fmt_pm(mom_val_minus, mom_val_med, mom_val_plus),
         fmt_pm(mom_spread_minus, mom_spread_med, mom_spread_plus),
         fmt_pm(mom_fee_minus, mom_fee_med, mom_fee_plus),
-        fmt_pm(net_vs_etf_minus, net_vs_etf_med, net_vs_etf_plus)
+        fmt_pm(net_vs_etf_minus, net_vs_etf_med, net_vs_etf_plus),
     )
     console.print(results_table)
 

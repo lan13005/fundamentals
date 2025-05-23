@@ -1,5 +1,6 @@
-import subprocess
 import os
+import subprocess
+
 
 def test_sector_industry_list_cli(tmp_path):
     """
@@ -10,10 +11,20 @@ def test_sector_industry_list_cli(tmp_path):
     cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        result = subprocess.run([
-            "python", os.path.join(cwd, "scripts/fund_cli.py"),
-            "sector-industry-list", "--market-category", "Q", "--max-tickers", "10"
-        ], capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            [
+                "python",
+                os.path.join(cwd, "fund_cli.py"),
+                "sector-industry-list",
+                "--market-category",
+                "Q",
+                "--max-tickers",
+                "10",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         # Check output files
         assert os.path.exists("yahoo_sector_industry_summary.csv")
         assert os.path.exists("yahoo_company_info.csv")
