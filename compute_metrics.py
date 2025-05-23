@@ -96,13 +96,6 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
         balance = company.quarterly_balance_sheet
         cashflow = company.quarterly_cashflow
         dividends = company.dividends
-        
-        print("available indices:")
-        print(f"income: {income.index}")
-        print(f"balance: {balance.index}")
-        print(f"cashflow: {cashflow.index}")
-        print(f"dividends: {dividends.index}")
-        
     except Exception as e:
         console.log(f"[red]Failed to load statements: {e}[/red]")
         return {"error": f"Failed to load statements: {e}"}
@@ -116,7 +109,7 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
                 return vals.sum()
             except Exception:
                 continue
-        return None
+        return 0
 
     def safe_get(df, keys):
         if isinstance(keys, str):
@@ -126,10 +119,9 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
                 return df.loc[key].iloc[0]
             except Exception:
                 continue
-        return None
+        return 0
 
     def safe_diff(df, keys):
-        # For growth metrics: (latest - prev) / prev
         if isinstance(keys, str):
             keys = [keys]
         for key in keys:
@@ -139,97 +131,110 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
                     return (vals[0] - vals[1]) / vals[1]
             except Exception:
                 continue
-        return None
+        return 0
 
     # Get latest close price and shares outstanding
-    try:
-        hist = company.history(period="5d")
-        price = float(hist["Close"].iloc[-1])
-    except Exception:
-        price = None
-    shares_out = safe_get(balance, ["Ordinary Shares Number", "Common Stock Shares Outstanding", "Share Issued"])
-    if shares_out is not None:
-        try:
-            shares_out = float(shares_out)
-        except Exception:
-            shares_out = None
-    # Market Cap
-    market_cap = price * shares_out if price is not None and shares_out is not None else None
+    hist = company.history(period="5d")
+    price = float(hist["Close"].iloc[-1])
+    shares_out = safe_get(balance, ["Ordinary Shares Number", "Share Issued"])
+    shares_out = float(shares_out)
+    market_cap = price * shares_out
 
-    # TTM values
-    ttm_net_income = safe_ttm(income, ["Net Income", "NetIncome"])
-    ttm_equity = safe_get(balance, ["Total Stockholder Equity", "Total Equity"])
+    # TTM values (use all plausible keys in order of preference)
+    ttm_net_income = safe_ttm(income, [
+        "Net Income", "Net Income Common Stockholders", "Net Income Including Noncontrolling Interests"])
+    ttm_equity = safe_get(balance, [
+        "Common Stock Equity", "Stockholders Equity", "Total Equity Gross Minority Interest"])
     ttm_total_assets = safe_get(balance, ["Total Assets"])
     ttm_op_income = safe_ttm(income, ["Operating Income"])
-    ttm_revenue = safe_ttm(income, ["Total Revenue", "Revenue"])
+    ttm_revenue = safe_ttm(income, ["Total Revenue", "Operating Revenue"])
     ttm_ebitda = safe_ttm(income, ["EBITDA"])
     ttm_gross_profit = safe_ttm(income, ["Gross Profit"])
     ttm_op_cf = safe_ttm(cashflow, ["Operating Cash Flow"])
-    ttm_capex = safe_ttm(cashflow, ["Capital Expenditures"])
-    ttm_dividends_paid = safe_ttm(cashflow, ["Dividends Paid"])
-    total_cash = safe_get(balance, ["Cash", "Cash And Cash Equivalents"])
+    ttm_capex = safe_ttm(cashflow, ["Capital Expenditure"])
+    ttm_dividends_paid = safe_ttm(cashflow, ["Cash Dividends Paid", "Common Stock Dividend Paid"])
+    total_cash = safe_get(balance, ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments"])
     total_debt = safe_get(balance, ["Total Debt"])
-    current_assets = safe_get(balance, ["Total Current Assets"])
-    current_liabilities = safe_get(balance, ["Total Current Liabilities"])
+    current_assets = safe_get(balance, ["Current Assets"])
+    current_liabilities = safe_get(balance, ["Current Liabilities"])
 
     metrics = {}
     # --- Profitability & Economic Moat ---
-    metrics["returnOnEquity"] = (ttm_net_income / ttm_equity) if ttm_net_income is not None and ttm_equity not in (None, 0) else None
-    metrics["returnOnAssets"] = (ttm_net_income / ttm_total_assets) if ttm_net_income is not None and ttm_total_assets not in (None, 0) else None
-    metrics["operatingMargins"] = (ttm_op_income / ttm_revenue) if ttm_op_income is not None and ttm_revenue not in (None, 0) else None
-    metrics["ebitdaMargins"] = (ttm_ebitda / ttm_revenue) if ttm_ebitda is not None and ttm_revenue not in (None, 0) else None
-    metrics["grossMargins"] = (ttm_gross_profit / ttm_revenue) if ttm_gross_profit is not None and ttm_revenue not in (None, 0) else None
-    metrics["profitMargins"] = (ttm_net_income / ttm_revenue) if ttm_net_income is not None and ttm_revenue not in (None, 0) else None
+    metrics["returnOnEquity"] = ttm_net_income / ttm_equity
+    try:
+        assets_vals = balance.loc["Total Assets"].values[:5]
+        avg_assets = sum(assets_vals) / len(assets_vals)
+    except Exception:
+        avg_assets = ttm_total_assets
+    metrics["returnOnAssets"] = ttm_net_income / avg_assets
+    metrics["operatingMargins"] = ttm_op_income / ttm_revenue
+    metrics["ebitdaMargins"] = ttm_ebitda / ttm_revenue
+    metrics["grossMargins"] = ttm_gross_profit / ttm_revenue
+    metrics["profitMargins"] = ttm_net_income / ttm_revenue
 
     # --- Growth Sustainability ---
-    metrics["revenueGrowth"] = safe_diff(income, ["Total Revenue", "Revenue"])
-    metrics["earningsGrowth"] = safe_diff(income, ["Net Income", "NetIncome"])
-    metrics["earningsQuarterlyGrowth"] = safe_diff(income, ["Net Income", "NetIncome"])
-    metrics["freeCashflow"] = (ttm_op_cf + ttm_capex) if ttm_op_cf is not None and ttm_capex is not None else None
+    def yoy_growth(df, keys):
+        if isinstance(keys, str):
+            keys = [keys]
+        for key in keys:
+            try:
+                vals = df.loc[key].values
+                # Compare most recent quarter to same quarter a year ago (4 quarters back)
+                if len(vals) >= 5 and vals[4] != 0:
+                    return (vals[0] - vals[4]) / abs(vals[4])
+            except Exception:
+                continue
+        return 0
+    metrics["revenueGrowth"] = yoy_growth(income, ["Total Revenue", "Operating Revenue"])
+    metrics["earningsGrowth"] = yoy_growth(income, ["Net Income", "Net Income Common Stockholders", "Net Income Including Noncontrolling Interests"])
+    metrics["earningsQuarterlyGrowth"] = metrics["earningsGrowth"]
+    metrics["freeCashflow"] = ttm_op_cf + ttm_capex
 
     # --- Balance-Sheet Resilience ---
-    metrics["totalCash"] = float(total_cash) if total_cash is not None else None
-    metrics["totalDebt"] = float(total_debt) if total_debt is not None else None
-    metrics["debtToEquity"] = (float(total_debt) / ttm_equity) if total_debt is not None and ttm_equity not in (None, 0) else None
-    metrics["currentRatio"] = (float(current_assets) / float(current_liabilities)) if current_assets not in (None, 0) and current_liabilities not in (None, 0) else None
+    cash1 = safe_get(balance, ["Cash And Cash Equivalents"])
+    metrics["totalCash"] = float(cash1)
+    metrics["totalDebt"] = float(total_debt)
+    metrics["debtToEquity"] = (float(total_debt) / ttm_equity) * 100
+    metrics["currentRatio"] = float(current_assets) / float(current_liabilities)
 
     # --- Capital-Allocation Track Record ---
-    try:
-        if not dividends.empty and price is not None:
-            annual_div = dividends[-4:].sum()
-            metrics["dividendYield"] = (annual_div / price)
-        else:
-            metrics["dividendYield"] = 0
-    except Exception:
-        metrics["dividendYield"] = None
-    metrics["payoutRatio"] = (abs(ttm_dividends_paid) / ttm_net_income) if ttm_dividends_paid is not None and ttm_net_income not in (None, 0) else None
-    # 5yr avg dividend yield: fallback to None (not in statements)
-    metrics["fiveYearAvgDividendYield"] = None
+    if not dividends.empty and price != 0:
+        annual_div = dividends[-4:].sum()
+        metrics["dividendYield"] = (annual_div / price) * 100
+        # 5yr avg dividend yield: use last 20 dividends (approx 5 years)
+        fiveyr_div = dividends[-20:].sum()
+        metrics["fiveYearAvgDividendYield"] = (fiveyr_div / price) * 100 / 5
+    else:
+        metrics["dividendYield"] = 0
+        metrics["fiveYearAvgDividendYield"] = 0
+    metrics["payoutRatio"] = abs(ttm_dividends_paid) / ttm_net_income
 
     # --- Valuation vs. Quality ---
     metrics["marketCap"] = market_cap
-    # EPS (TTM): Net income / shares_out
-    eps_ttm = (ttm_net_income / shares_out) if ttm_net_income is not None and shares_out not in (None, 0) else None
-    # Trailing PE: price / EPS (TTM)
-    metrics["trailingPE"] = (price / eps_ttm) if price is not None and eps_ttm not in (None, 0) else None
-    # Forward PE: not available from statements, fallback to None
-    metrics["forwardPE"] = None
-    # Book value per share: equity / shares_out
-    book_value_per_share = (ttm_equity / shares_out) if ttm_equity is not None and shares_out not in (None, 0) else None
-    metrics["priceToBook"] = (price / book_value_per_share) if price is not None and book_value_per_share not in (None, 0) else None
-    metrics["priceToSalesTrailing12Months"] = (market_cap / ttm_revenue) if market_cap is not None and ttm_revenue not in (None, 0) else None
-    # Enterprise Value = market cap + total debt - cash
-    enterprise_value = (market_cap + float(total_debt) - float(total_cash)) if market_cap is not None and total_debt is not None and total_cash is not None else None
+    eps_ttm = ttm_net_income / shares_out
+    metrics["trailingPE"] = price / eps_ttm
+    # Forward PE: use forwardEps from company.info if available
+    forward_eps = company.info.get("forwardEps", 0)
+    if forward_eps:
+        metrics["forwardPE"] = price / forward_eps
+    else:
+        metrics["forwardPE"] = 0
+    book_value_per_share = ttm_equity / shares_out
+    metrics["priceToBook"] = price / book_value_per_share
+    metrics["priceToSalesTrailing12Months"] = market_cap / ttm_revenue
+    enterprise_value = market_cap + float(total_debt) - float(total_cash)
     metrics["enterpriseValue"] = enterprise_value
-    metrics["enterpriseToEbitda"] = (enterprise_value / ttm_ebitda) if enterprise_value is not None and ttm_ebitda not in (None, 0) else None
-    # PEG ratio: trailingPE / earnings growth
-    metrics["trailingPegRatio"] = (metrics["trailingPE"] / metrics["earningsQuarterlyGrowth"]) if metrics["trailingPE"] not in (None, 0) and metrics["earningsQuarterlyGrowth"] not in (None, 0) else None
+    metrics["enterpriseToEbitda"] = enterprise_value / ttm_ebitda
+    # PEG ratio: trailingPE / (100 * earningsGrowth) (earningsGrowth as YoY fraction)
+    if metrics["earningsGrowth"]:
+        metrics["trailingPegRatio"] = metrics["trailingPE"] / (100 * metrics["earningsGrowth"])
+    else:
+        metrics["trailingPegRatio"] = 0
 
     # --- Ownership & Liquidity ---
-    # These are not in statements, so fallback to None
-    metrics["heldPercentInsiders"] = None
-    metrics["heldPercentInstitutions"] = None
-    metrics["beta"] = None
+    metrics["heldPercentInsiders"] = company.info.get("heldPercentInsiders", 0)
+    metrics["heldPercentInstitutions"] = company.info.get("heldPercentInstitutions", 0)
+    metrics["beta"] = company.info.get("beta", 0)
 
     return metrics
 

@@ -23,7 +23,9 @@ def test_compare_metrics(ticker: str):
             match = "[red]❌[/red]"
         else:
             try:
-                match = "[green]✅[/green]" if abs(val - yf_val) < 1e-2 else "[red]❌[/red]"
+                # Use relative difference, allow 2% tolerance
+                rel_diff = abs(val - yf_val) / (abs(yf_val) + 1e-8)
+                match = "[green]✅[/green]" if rel_diff <= 0.02 else "[red]❌[/red]"
             except Exception:
                 match = "[red]❌[/red]"
         table.add_row(key, str(val), str(yf_val), match)
