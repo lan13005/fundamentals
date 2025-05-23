@@ -1,13 +1,8 @@
 {
-    "mcpServers": {
-        "notegen": {
-            "command": "uv",
-            "args": [
-            "--directory",
-            ".",
-            "run",
-            "server.py"
-            ]
-        }
+  "mcpServers": {
+    "notegen": {
+      "command": "uv",
+      "args": ["--directory", ".", "run", "server.py"]
     }
+  }
 }

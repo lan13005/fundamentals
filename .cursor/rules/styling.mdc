@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 
@@ -30,7 +30,7 @@ hyper_table = Table(
 )
 hyper_table.add_column("Parameter", style="cyan", no_wrap=True)
 hyper_table.add_column("Value",     style="yellow", justify="right")
-``` 
+```
 
 **Results tables**
 - Header style `"bold green"`; set `min_width` for tidy columns.
@@ -40,7 +40,7 @@ results_table = Table(
     box=box.ROUNDED,
     header_style="bold green",
 )
-``` 
+```
 
 **Panels (multi-line notes)**
 - Wrap long explanations; give a title & `border_style`.
@@ -102,4 +102,3 @@ plt.savefig("plot.png", dpi=150)
 2. **Consistency** – identical colour codes, border shapes, and font weights across scripts.
 3. **Accessibility** – tables provide text equivalents; colour choices meet contrast best-practice.
 4. **Explain first** – print hyper-parameters and an explanatory panel _before_ outputting or saving graphics.
-
