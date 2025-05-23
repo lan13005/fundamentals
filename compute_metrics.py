@@ -153,7 +153,7 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     ttm_op_cf = safe_ttm(cashflow, ["Operating Cash Flow"])
     ttm_capex = safe_ttm(cashflow, ["Capital Expenditure"])
     ttm_dividends_paid = safe_ttm(cashflow, ["Cash Dividends Paid", "Common Stock Dividend Paid"])
-    total_cash = safe_get(balance, ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments"])
+    total_cash = safe_get(balance, ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"])
     total_debt = safe_get(balance, ["Total Debt"])
     current_assets = safe_get(balance, ["Current Assets"])
     current_liabilities = safe_get(balance, ["Current Liabilities"])
@@ -191,8 +191,7 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
     metrics["freeCashflow"] = ttm_op_cf + ttm_capex
 
     # --- Balance-Sheet Resilience ---
-    cash1 = safe_get(balance, ["Cash And Cash Equivalents"])
-    metrics["totalCash"] = float(cash1)
+    metrics["totalCash"] = float(total_cash)
     metrics["totalDebt"] = float(total_debt)
     metrics["debtToEquity"] = (float(total_debt) / ttm_equity) * 100
     metrics["currentRatio"] = float(current_assets) / float(current_liabilities)
@@ -232,10 +231,9 @@ def compute_metrics_from_quarters(ticker: str) -> Dict[str, Any]:
         metrics["trailingPegRatio"] = 0
 
     # --- Ownership & Liquidity ---
+    # IMPORTANT: DO NOT MODIFY BELOW THIS LINE
     metrics["heldPercentInsiders"] = company.info.get("heldPercentInsiders", 0)
     metrics["heldPercentInstitutions"] = company.info.get("heldPercentInstitutions", 0)
     metrics["beta"] = company.info.get("beta", 0)
 
     return metrics
-
-
