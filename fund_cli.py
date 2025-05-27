@@ -7,7 +7,7 @@ from rich.table import Table
 
 from fundamentals.utility.diagnose_cursor_mcp import diagnose_cursor_mcp
 from fundamentals.utility.get_sector_industry_list import get_sector_industry_summary
-from fundamentals.utility.macrotrends_scraper import DEFAULT_PAGES, run_macrotrends_scraper
+from fundamentals.utility.macrotrends_scraper import run_macrotrends_scraper
 from fundamentals.utility.simulate_market import run_etf_vs_momentum_simulation
 from fundamentals.utility.swap_mdc import swap_mdc
 
@@ -131,7 +131,6 @@ def run_macrotrends(args):
     slug_map_dict = dict(pair.split(":", 1) for pair in args.slug_map) if args.slug_map else None
     run_macrotrends_scraper(
         symbols=args.symbols,
-        pages=args.pages,
         slug_map=slug_map_dict,
         freq=args.freq,
         force=args.force,
@@ -223,12 +222,6 @@ def main():
         required=True,
         metavar="TICKER",
         help="List of ticker symbols to process",
-    )
-    parser_macrotrends.add_argument(
-        "--pages",
-        nargs="+",
-        default=DEFAULT_PAGES,
-        help=f"List of pages to scrape (default: {', '.join(DEFAULT_PAGES)})",
     )
     parser_macrotrends.add_argument(
         "--slug-map",

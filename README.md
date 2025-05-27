@@ -1,10 +1,11 @@
 # fundamentals
 
 Python package for fundamental analysis of companies for value investing:
-- macro-trends
-- sector-industry analysis
-- company-specific analysis (i.e. financial metrics, SEC filings, etc.)
+- study macro-trends to identify tailwinds
+- company-specific analysis
+  - SEC filings (10-K, 10-Q, etc.)
+  - financial analysis (income statement, balance sheet, cash flow statement, financial ratios)
 
 **Features:**
 - aimed for Cursor IDE with rules- and task-based agentic programming
-- using LLM to generate reports and distil textual information using MCP tools
+- using language models to generate reports and distil textual information using MCP tools

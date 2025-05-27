@@ -20,9 +20,10 @@ def test_macrotrends():
                 "python",
                 os.path.join(cwd, "fund_cli.py"),
                 "macrotrends",
-                "--symbols", "AAPL",
-                "--pages", "income-statement",  # Test with just one page to keep test fast
-                "--freq", "Q",
+                "--symbols",
+                "AAPL",
+                "--freq",
+                "Q",
                 "--force",  # Force fetch to ensure we get fresh data
             ],
             capture_output=True,
@@ -30,9 +31,15 @@ def test_macrotrends():
             check=True,
         )
 
-        # Check that parquet files were created
+        # Check that merged parquet file was created
         parquet_files = os.listdir("macro_data/parquet")
-        assert any(f.startswith("AAPL_income-statement_") and f.endswith(".parquet") for f in parquet_files)
+        # Find the expected merged file name (AAPL_<quarter>.parquet)
+        merged_file = None
+        for f in parquet_files:
+            if f.startswith("AAPL_") and f.endswith(".parquet") and f.count("_") == 1:
+                merged_file = f
+                break
+        assert merged_file is not None, f"Merged parquet file not found in {parquet_files}"
 
         # Check that DuckDB file was created
         assert os.path.exists("macro_data/macrotrends.duckdb")
