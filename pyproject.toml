@@ -56,7 +56,7 @@ exclude = []
 namespaces = false
 
 [project.scripts]
-fund = "fund_cli:main"
+fund = "fundamentals.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
