@@ -182,6 +182,9 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         index=df.index
     )
 
+    # Growth metrics
+    df['Revenue YoY'] = df['Revenue'].pct_change(periods=4)
+
     # NOTE: our data is sorted with latest date first. Need to reverse, then roll, then reverse again
     df['Taxes LTM']   = df['Income Taxes'].rolling(window=4).sum()
     df['PreTax LTM']  = df['Pre-Tax Income'].rolling(window=4).sum()
@@ -197,10 +200,12 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df['Avg Earnings 3y']      = df['Earnings LTM'].rolling(window=3).mean() # backward rolling window
     df['FCF']                  = (
         df['Cash Flow From Operating Activities']
-    - df['Net Change In Property, Plant, And Equipment']
-    - df['Net Change In Intangible Assets']
+    + df['Net Change In Property, Plant, And Equipment']
+    + df['Net Change In Intangible Assets']
     )
-    df['FCF LTM']              = df['FCF'].rolling(window=4).sum()
+    df['FCF Margin']     = df['FCF'] / df['Revenue']
+    df['FCF Margin LTM'] = df['FCF'].rolling(window=4).sum() / df['Revenue'].rolling(window=4).sum()
+
     df['Market Cap']           = df['Price'] * df['Shares Outstanding']
     df['EPS 3y']               = df['Avg Earnings 3y'] / df['Shares Outstanding']
     df['PE Ratio']             = df['Price'] / df['EPS 3y']
@@ -215,6 +220,10 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df['Dividend Yield LTM']   = df['Dividends Per Share'].rolling(window=4).sum()
     df['Dividend Yield']       = df['Dividend Yield LTM'] / df['Price']
     df['FCF Yield LTM']        = df['FCF LTM'] / df['Enterprise Value']
+
+    # Total return over 5 years using Compound Annual Growth Rate
+    df['TR Factor 5y'] = (df['Price'] + df['Dividends Per Share'].rolling(window=4*5).sum()) / df['Price'].shift(4*5)
+    df['TR CAGR 5y']  = df['TR Factor 5y'] ** (1/5) - 1
 
     return df
 
