@@ -5,9 +5,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from fundamentals.utility.company_info import get_company_info
 from fundamentals.utility.diagnose_cursor_mcp import diagnose_cursor_mcp
-from fundamentals.utility.get_company_info import get_company_info
-from fundamentals.utility.get_sector_industry_list import get_sector_industry_summary
 from fundamentals.utility.macrotrends_scraper import run_macrotrends_scraper
 from fundamentals.utility.simulate_market import run_etf_vs_momentum_simulation
 from fundamentals.utility.swap_mdc import swap_mdc
@@ -117,16 +116,6 @@ def run_spread_sim(args):
     run_etf_vs_momentum_simulation()
 
 
-def run_sector_industry_list(args):
-    """Build a Sector-Industry summary from Yahoo Finance classifications."""
-    get_sector_industry_summary(
-        market_category=args.market_category,
-        exclude_etf=args.exclude_etf,
-        min_round_lot=args.min_round_lot,
-        max_tickers=args.max_tickers,
-    )
-
-
 def run_macrotrends(args):
     """Fetch financial data from Macrotrends for specified tickers."""
     slug_map_dict = dict(pair.split(":", 1) for pair in args.slug_map) if args.slug_map else None
@@ -217,40 +206,6 @@ def main():
         add_help=False,
     )
     parser_spread.set_defaults(func=run_spread_sim)
-
-    # sector-industry-list
-    parser_sector = subparsers.add_parser(
-        "sector-industry-list",
-        help="Build a Sector-Industry summary from Yahoo Finance",
-        description="Build a Sector-Industry summary from Yahoo Finance classifications. Outputs CSV files with summary and full company info.",
-        add_help=False,
-    )
-    parser_sector.add_argument(
-        "--market-category",
-        nargs="+",
-        default=["Q", "G"],
-        choices=["Q", "G", "S"],
-        help="Market categories to include (default: Q G)",
-    )
-    parser_sector.add_argument(
-        "--exclude-etf",
-        action="store_true",
-        default=True,
-        help="Exclude ETFs (default: True)",
-    )
-    parser_sector.add_argument(
-        "--min-round-lot",
-        type=int,
-        default=100,
-        help="Minimum round lot size (default: 100)",
-    )
-    parser_sector.add_argument(
-        "--max-tickers",
-        type=int,
-        default=None,
-        help="Maximum number of tickers to process (default: all)",
-    )
-    parser_sector.set_defaults(func=run_sector_industry_list)
 
     # macrotrends
     parser_macrotrends = subparsers.add_parser(
