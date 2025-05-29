@@ -6,6 +6,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from fundamentals.utility.diagnose_cursor_mcp import diagnose_cursor_mcp
+from fundamentals.utility.get_company_info import get_company_info
 from fundamentals.utility.get_sector_industry_list import get_sector_industry_summary
 from fundamentals.utility.macrotrends_scraper import run_macrotrends_scraper
 from fundamentals.utility.simulate_market import run_etf_vs_momentum_simulation
@@ -138,9 +139,51 @@ def run_macrotrends(args):
     )
 
 
+def run_company_info(args):
+    """Fetch company information using yfinance for S&P 500 or custom tickers."""
+    get_company_info(
+        tickers=args.tickers,
+        file_name=args.file_name,
+        use_sp500=args.use_sp500,
+        output_dir=args.output_dir,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fundamentals CLI - Tools for financial data analysis", add_help=False)
     subparsers = parser.add_subparsers(title="subcommands", dest="command", required=True)
+
+    # company-info
+    parser_company = subparsers.add_parser(
+        "company-info",
+        help="Fetch company information using yfinance",
+        description="Fetch company information using yfinance for S&P 500 tickers or custom ticker list. Saves data to parquet format.",
+        add_help=False,
+    )
+    parser_company.add_argument(
+        "--tickers",
+        nargs="+",
+        default=None,
+        metavar="TICKER",
+        help="List of ticker symbols (if not provided, uses S&P 500)",
+    )
+    parser_company.add_argument(
+        "--file-name",
+        default=None,
+        help="Output file name (required when using custom tickers, defaults to 'SP500' for S&P 500)",
+    )
+    parser_company.add_argument(
+        "--use-sp500",
+        action="store_true",
+        default=True,
+        help="Use S&P 500 tickers from Wikipedia (default: True)",
+    )
+    parser_company.add_argument(
+        "--output-dir",
+        default="macro_data",
+        help="Directory to save parquet file (default: macro_data)",
+    )
+    parser_company.set_defaults(func=run_company_info)
 
     # diagnose-cursor-mcp
     parser_dcm = subparsers.add_parser(
