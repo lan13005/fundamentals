@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
+from fundamentals.utility.macrotrends_scraper import get_latest_quarter_end
+
 console = Console()
 
 def get_company_info(
@@ -70,11 +72,11 @@ def get_company_info(
         # Interestingly, if you look at the following risk metrics for S&P 500 companies
         #   you will notice that there are ~50 companies in each bin. This suggests that
         #   the score system could be using percentile rankings.
-        "auditRisk",               # risk of auditing issues
-        "boardRisk",               # governance risk at board level
-        "compensationRisk",        # risk from executive pay practices
-        "shareHolderRightsRisk",   # risk to shareholder rights
-        "overallRisk",             # aggregate governance risk
+        "auditRisk",               # Audit-committee & accounting oversight score; high values can foreshadow restatements or weak controls
+        "boardRisk",               # Board independence / diversity score; strong boards improve capital-allocation discipline
+        "compensationRisk",        # Pay-for-performance alignment; mis-aligned incentives erode long-term value
+        "shareHolderRightsRisk",   # Minority-rights protection (one-share-one-vote, no poison pill); low risk limits dilution events
+        "overallRisk",             # ISS QualityScore decile rank (1 best, 10 worst); quick proxy for governance quality and scandal risk
 
         # Timestamps for governance data (seconds since UNIX epoch)
         "governanceEpochDate",         # when governance metrics were last updated
@@ -85,35 +87,35 @@ def get_company_info(
         "irWebsite",       # investor relations website
 
         # Ownership & analyst consensus
-        "heldPercentInstitutions",     # interestingly this value can be greater than 1
-        "heldPercentInsiders",
+        "heldPercentInstitutions",     # Percent of shares held by institutions; interestingly this value can be greater than 1
+        "heldPercentInsiders",         # Percent of shares held by insiders
         "recommendationKey",           # e.g. 'buy', 'hold', 'sell'
         "recommendationMean",          # average analyst recommendation (numeric, 1=Strong Buy…5=Strong Sell)
         "averageAnalystRating",        # string like '2.1 - Buy'; numeric part on 1-5 scale
-        "numberOfAnalystOpinions",
-        "targetLowPrice",
-        "targetMeanPrice",
-        "targetHighPrice",
-        "targetMedianPrice",
+        "numberOfAnalystOpinions",     # Number of analysts covering the stock
+        "targetLowPrice",              # Lowest analyst target price
+        "targetMeanPrice",             # Average analyst target price
+        "targetHighPrice",             # Highest analyst target price
+        "targetMedianPrice",           # Median analyst target price
 
         # Capital structure & normalized profitability
-        "debtToEquity",
-        "totalDebt",
-        "totalCash",
-        "enterpriseValue",
+        "debtToEquity",     # Leverage ratio; <1 preferred for sleep-at-night safety
+        "totalDebt",        # Absolute leverage gauge; interpret with debt-to-equity
+        "totalCash",        # Liquidity buffer in absolute terms
+        "enterpriseValue",  # Total operating valuation incl. debt & cash; cross-capital-structure metric
         "enterpriseToRevenue",
         "enterpriseToEbitda",
-        "profitMargins",
-        "grossMargins",
-        "ebitdaMargins",
-        "operatingMargins",
-        "returnOnAssets",
-        "returnOnEquity",
-        "dividendYield",
-        "dividendRate",
-        "payoutRatio",
-        "fiveYearAvgDividendYield",
-        "beta",
+        "profitMargins",    # Bottom-line (net) profitability; confirms that revenue converts to cash
+        "grossMargins",     # Up-stream pricing power and cost moat; early warning of eroding advantage
+        "ebitdaMargins",    # Cash-flow proxy margin; less accounting noise than net margin
+        "operatingMargins", # Captures operating-level pricing power before unusuals; stability is key
+        "returnOnAssets",   # Balance-sheet-agnostic profitability; useful cross-sector check on ROE
+        "returnOnEquity",   # Core measure of capital efficiency; >15 % across cycles signals durable competitive advantage
+        "dividendYield",    # Shareholder pay-out today; combine with payoutRatio for sustainability
+        "dividendRate",     # Dividend yield; annualized payout as a percentage of price
+        "payoutRatio",      # Earnings share returned to owners; <60 % gives reinvestment headroom
+        "fiveYearAvgDividendYield", # History of income return; smooths one-off spikes/cuts
+        "beta",             # Historical volatility vs. market; helps size positions within a momentum overlay
     ]
 
     console.print(f"[blue]Fetching company info from yfinance for {len(tickers)} tickers...[/blue]")
@@ -151,7 +153,7 @@ def get_company_info(
 
     # Save to parquet file
     os.makedirs(output_dir, exist_ok=True)
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    date_str = get_latest_quarter_end().strftime("%Y-%m-%d")
     output_file = os.path.join(output_dir, f"{file_name}-{date_str}.parquet")
 
     df.to_parquet(output_file, index=False)

@@ -3,7 +3,7 @@
 Test script for get_company_info function
 """
 
-from fundamentals.utility.get_company_info import get_company_info
+from fundamentals.utility.company_info import get_company_info
 
 # Test with just a few custom tickers
 print("Testing with custom tickers...")

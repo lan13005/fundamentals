@@ -204,12 +204,13 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     + df['Net Change In Intangible Assets']
     )
     df['FCF Margin']     = df['FCF'] / df['Revenue']
+    df['FCF LTM']        = df['FCF'].rolling(window=4).sum()
     df['FCF Margin LTM'] = df['FCF'].rolling(window=4).sum() / df['Revenue'].rolling(window=4).sum()
 
     df['Market Cap']           = df['Price'] * df['Shares Outstanding']
     df['EPS 3y']               = df['Avg Earnings 3y'] / df['Shares Outstanding']
     df['PE Ratio']             = df['Price'] / df['EPS 3y']
-    df['BV_per_share']         = df['Share Holder Equity'] / df['Shares Outstanding']
+    df['BV per share']         = df['Share Holder Equity'] / df['Shares Outstanding']
     df['PB Ratio']             = df['Price'] / df['BV per share']
     df['BV to Tangible Assets']= (
         (df['Share Holder Equity'] - df['Goodwill And Intangible Assets'])
@@ -219,11 +220,17 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df['EV to EBITDA']         = df['Enterprise Value'] / df['EBITDA']
     df['Dividend Yield LTM']   = df['Dividends Per Share'].rolling(window=4).sum()
     df['Dividend Yield']       = df['Dividend Yield LTM'] / df['Price']
+    df['FCF LTM']              = df['FCF'].rolling(window=4).sum()
     df['FCF Yield LTM']        = df['FCF LTM'] / df['Enterprise Value']
 
     # Total return over 5 years using Compound Annual Growth Rate
     df['TR Factor 5y'] = (df['Price'] + df['Dividends Per Share'].rolling(window=4*5).sum()) / df['Price'].shift(4*5)
     df['TR CAGR 5y']  = df['TR Factor 5y'] ** (1/5) - 1
+    
+    # Everything at this point should be space-separated
+    #   Switch to kebab-case for column names which is easier to reference
+    df.columns = df.columns.str.replace(" ", "-")
+    df.columns = df.columns.str.replace("-{2,}", "-", regex=True)
 
     return df
 
