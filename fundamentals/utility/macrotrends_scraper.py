@@ -89,12 +89,13 @@ def parse_original_data(html: str) -> pd.DataFrame:
 def clean_dataframe_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure all columns are safe for Parquet output by converting mixed or problematic types.
-    - Convert all columns with mixed types to string.
-    - Convert float columns to nullable float.
-    - Convert bytes columns to string.
-    - Leave int and bool columns as is.
+    Then transform the dataframe structure with proper datatypes:
+    - Transpose with field_name as columns and dates as index
+    - Convert numeric columns to float with NaN filled as 0
+    - Convert date column to datetime
     """
     df_clean = df.copy()
+    # Initial cleaning for mixed/problematic types
     for col in df_clean.columns:
         col_data = df_clean[col]
         # Convert bytes columns to string
@@ -110,6 +111,112 @@ def clean_dataframe_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
         elif col_data.isnull().all():
             df_clean[col] = col_data.astype(str)
     return df_clean
+
+def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """
+    Finalize the merged dataframe by:
+    - Transposing the dataframe to have features as columns rather than datetimes
+    - Converting all non-date columns to numeric
+    - Converting the date column to datetime
+    - Fetching raw price & dividends, resampling to quarter-end
+    - Aligning all datasets
+    - Calculating additional annualized features
+        - EPS (+derived features) uses 3yr rolling average
+    """
+    # Finally, transform the dataframe to have features as columns rather than datetimes
+    if 'field_name' in df.columns:
+        df = df.set_index('field_name').T
+        df.index.name = "date"
+        df = df.reset_index()
+
+        # Convert all non-date columns to numeric
+        # Filling NaNs with 0s makes sense for this type of data
+        for col in df.columns:
+            if col == 'date':
+                continue
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # Convert date column to datetime
+        df['date'] = pd.to_datetime(df['date'])
+
+    # 1. Set up yfinance and date range
+    yt     = yf.Ticker(ticker)
+    start  = df['date'].min()
+    end    = df['date'].max() + pd.Timedelta(days=1) # offset to include the last day
+
+    # 2. Fetch raw price & dividends
+    prices = yt.history(start=start, end=end)[['Close']].rename(columns={'Close':'Price'})
+    divs   = yt.dividends.rename("Dividends Per Share")
+
+    # 3. Resample to quarter-end
+    price_q = prices['Price'].resample('QE').last()
+    price_q.index = price_q.index.tz_localize(None)           # drop tz-info
+    price_q = price_q.loc[start:end]
+
+    div_q = divs.resample('QE').sum()
+    if div_q.index.tz is not None:
+        div_q.index = div_q.index.tz_localize(None)
+    div_q = div_q.loc[start:end].fillna(0)                    # fill missing quarters with 0
+
+    # Align all datasets, print a remark on any alignment issues like data chopped off
+    new_start = max(start, div_q.index.min(), price_q.index.min())
+    new_end   = min(end, div_q.index.max(), price_q.index.max()) + pd.Timedelta(days=1)
+    price_q = price_q.loc[new_start:new_end]
+    div_q   = div_q.loc[new_start:new_end]
+    df = df[(df['date'] > new_start) * (df['date'] < new_end)]
+
+    # # 4. Align back to your df dates
+    df = df.set_index('date').sort_index()
+    df['Price']               = price_q.reindex(df.index, method='ffill')
+    df['Dividends Per Share'] = div_q.reindex(df.index).fillna(0)       # already 0 where missing
+
+    df['NWC']                  = df['Total Current Assets'] - df['Total Current Liabilities']
+    df['Net Fixed Assets']     = df['Property, Plant, And Equipment']
+    df['Capital Employed']     = df['NWC'] + df['Net Fixed Assets']
+    df['ROCE']                 = df['Operating Income'] / df['Capital Employed']
+
+    # Statutory tax rates changed in 2017 from 35% to 21%
+    #   This rate does not include state taxes, credits, international income, etc.
+    stat_rates = pd.Series(
+        df.index.year.map(lambda y: 0.35 if y < 2018 else 0.21),
+        index=df.index
+    )
+
+    # NOTE: our data is sorted with latest date first. Need to reverse, then roll, then reverse again
+    df['Taxes LTM']   = df['Income Taxes'].rolling(window=4).sum()
+    df['PreTax LTM']  = df['Pre-Tax Income'].rolling(window=4).sum()
+    df['ETR LTM']     = (df['Taxes LTM'] / df['PreTax LTM']).clip(0,1).ffill().fillna(stat_rates)
+    df['NOPAT LTM']   = df['Operating Income'].rolling(window=4).sum() * (1 - df['ETR LTM'])
+    df['Capital Employed Avg'] = df['Capital Employed'].rolling(window=4).mean() # average of 4 quarter-ends
+    df['ROIC LTM']   = df['NOPAT LTM'] / df['Capital Employed Avg'] # annualized ROIC
+
+    df['Total Debt']           = df['Long Term Debt'] + df['Net Current Debt']
+    df['Debt to Equity']       = df['Total Debt'] / df['Share Holder Equity']
+    df['Equity to Assets']     = df['Share Holder Equity'] / df['Total Assets']
+    df['Earnings LTM']         = df['Net Income'].rolling(window=4).sum()
+    df['Avg Earnings 3y']      = df['Earnings LTM'].rolling(window=3).mean() # backward rolling window
+    df['FCF']                  = (
+        df['Cash Flow From Operating Activities']
+    - df['Net Change In Property, Plant, And Equipment']
+    - df['Net Change In Intangible Assets']
+    )
+    df['FCF LTM']              = df['FCF'].rolling(window=4).sum()
+    df['Market Cap']           = df['Price'] * df['Shares Outstanding']
+    df['EPS 3y']               = df['Avg Earnings 3y'] / df['Shares Outstanding']
+    df['PE Ratio']             = df['Price'] / df['EPS 3y']
+    df['BV_per_share']         = df['Share Holder Equity'] / df['Shares Outstanding']
+    df['PB Ratio']             = df['Price'] / df['BV per share']
+    df['BV to Tangible Assets']= (
+        (df['Share Holder Equity'] - df['Goodwill And Intangible Assets'])
+        / df['Total Assets']
+    )
+    df['Enterprise Value']     = df['Market Cap'] + df['Total Debt'] - df['Cash On Hand']
+    df['EV to EBITDA']         = df['Enterprise Value'] / df['EBITDA']
+    df['Dividend Yield LTM']   = df['Dividends Per Share'].rolling(window=4).sum()
+    df['Dividend Yield']       = df['Dividend Yield LTM'] / df['Price']
+    df['FCF Yield LTM']        = df['FCF LTM'] / df['Enterprise Value']
+
+    return df
 
 
 def get_latest_quarter_end(today: Optional[dt.date] = None) -> dt.date:
@@ -190,11 +297,8 @@ async def scrape_many(
                 if not df.empty:
                     dfs.append(df)
             if dfs:
-                # Check all headers are the same
-                headers = [tuple(df.columns) for df in dfs]
-                if not all(h == headers[0] for h in headers):
-                    console.print(f"[red]Header mismatch for {s} on {snap_date} across pages![/red]")
                 merged = pd.concat(dfs, ignore_index=True)
+                merged = finalize_merged_dataframe(merged, s)
                 results[s] = merged
     return results
 
@@ -304,4 +408,6 @@ if __name__ == "__main__":
         symbols=args.symbols, slug_map=slug_map_dict, freq=args.freq, force=args.force, date=args.date
     )
     if not df.empty:
+        console.print(df.head())
+
         console.print(df.head())

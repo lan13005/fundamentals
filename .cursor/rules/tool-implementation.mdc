@@ -1,7 +1,7 @@
 ---
-description: Guidelines for implementing MCP tools in Python using FastMCP and EdgarTools
-globs: **/*
-alwaysApply: true
+description: 
+globs: 
+alwaysApply: false
 ---
 # How to implement a tool
 The overall goal is to work backwards. Whenever you want to implement a new piece of code you should:
