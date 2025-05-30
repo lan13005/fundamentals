@@ -10,8 +10,6 @@ from collections.abc import Iterable
 from typing import Dict, List, Optional, Tuple
 
 import aiohttp
-import duckdb
-import numpy as np
 import pandas as pd
 import yfinance as yf
 from aiohttp import ClientTimeout
@@ -25,7 +23,6 @@ console = Console()
 
 # ───────────── configuration ───────────── #
 DATA_DIR = pathlib.Path("macro_data/parquet")
-DB_PATH = pathlib.Path("macro_data/macrotrends.duckdb")
 UTIL_DIR = pathlib.Path("fundamentals/utility")
 OVERRIDE_FILE = UTIL_DIR / "slug_overrides.json"
 
@@ -231,6 +228,10 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     
     # Everything at this point should be space-separated
     #   Switch to kebab-case for column names which is easier to reference
+    df.columns = df.columns.str.replace(",", " ")
+    df.columns = df.columns.str.replace("/", " ")
+    df.columns = df.columns.str.replace(r"\s+", " ", regex=True)
+    df.columns = df.columns.str.replace(".", "-")
     df.columns = df.columns.str.replace(" ", "-")
     df.columns = df.columns.str.replace("-{2,}", "-", regex=True)
 
@@ -305,22 +306,6 @@ async def scrape_many(
                 merged = finalize_merged_dataframe(merged, s)
                 results[s] = merged
     return results
-
-
-# ───────────── DuckDB refresh ───────────── #
-def materialise_duckdb() -> None:
-    duckdb.execute(
-        f"""
-        CREATE OR REPLACE TABLE macrotrends AS
-        SELECT *,
-               regexp_extract(filename, '^([A-Z\\.]+)_', 1)           AS ticker,
-               regexp_extract(filename, '^[A-Z\\.]+_([a-z\\-]+)_', 1) AS page,
-               regexp_extract(filename, '_(\\d{{4}}-\\d{{2}}-\\d{{2}})\\.parquet$', 1)
-                                                                     AS snapshot_date
-        FROM read_parquet('{DATA_DIR}/*.parquet', union_by_name=TRUE)
-        """
-    )
-    console.print("[bold green]✓ macrotrends.duckdb refreshed[/bold green]")
 
 
 def build_symbol_list(symbols: List[str], slug_map: Optional[Dict[str, str]] = None) -> List[Tuple[str, str]]:

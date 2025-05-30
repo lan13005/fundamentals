@@ -41,11 +41,8 @@ def test_macrotrends():
                 break
         assert merged_file is not None, f"Merged parquet file not found in {parquet_files}"
 
-        # Check that DuckDB file was created
-        assert os.path.exists("macro_data/macrotrends.duckdb")
-
         # Check CLI output for expected messages
-        assert "macrotrends.duckdb refreshed" in result.stdout
+        assert "✓ Loaded" in result.stdout
 
     finally:
         os.chdir(cwd)
