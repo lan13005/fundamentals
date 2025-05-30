@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from fundamentals.utility.macrotrends_scraper import get_latest_quarter_end
+from fundamentals.utility.general import get_latest_quarter_end
 
 console = Console()
 

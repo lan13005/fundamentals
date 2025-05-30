@@ -1,4 +1,20 @@
+import datetime as dt
 import re
+from typing import Optional
+
+
+def get_latest_quarter_end(today: Optional[dt.date] = None) -> dt.date:
+    """Return the most recent completed financial quarter end date relative to today."""
+    today = today or dt.date.today()
+    year = today.year
+    if today.month >= 10:
+        return dt.date(year, 9, 30)
+    elif today.month >= 7:
+        return dt.date(year, 6, 30)
+    elif today.month >= 4:
+        return dt.date(year, 3, 31)
+    else:
+        return dt.date(year - 1, 12, 31)
 
 
 def clean_value_for_markdown_cell(cell_text: str) -> str:

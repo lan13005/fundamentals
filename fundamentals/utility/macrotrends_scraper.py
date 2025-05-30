@@ -18,6 +18,8 @@ from aiohttp import ClientTimeout
 from rich.console import Console
 from rich.table import Table
 
+from fundamentals.utility.general import get_latest_quarter_end
+
 warnings.filterwarnings("ignore", category=SyntaxWarning, message="invalid escape")
 console = Console()
 
@@ -233,20 +235,6 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df.columns = df.columns.str.replace("-{2,}", "-", regex=True)
 
     return df
-
-
-def get_latest_quarter_end(today: Optional[dt.date] = None) -> dt.date:
-    """Return the most recent completed financial quarter end date relative to today."""
-    today = today or dt.date.today()
-    year = today.year
-    if today.month >= 10:
-        return dt.date(year, 9, 30)
-    elif today.month >= 7:
-        return dt.date(year, 6, 30)
-    elif today.month >= 4:
-        return dt.date(year, 3, 31)
-    else:
-        return dt.date(year - 1, 12, 31)
 
 
 def merged_parquet_name(sym: str, snap_date: dt.date) -> pathlib.Path:

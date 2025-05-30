@@ -8,7 +8,7 @@ from edgar.xbrl import XBRLS
 from fastmcp import Context
 from rich.console import Console
 
-from fundamentals.utility.parsing import reformat_markdown_financial_table
+from fundamentals.utility.general import reformat_markdown_financial_table
 
 console = Console(file=open(os.devnull, "w"))
 
