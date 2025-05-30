@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: Guidelines on how to implement a new tool.
+globs: .cursor/rules/*.mdc
 alwaysApply: false
 ---
 # How to implement a tool

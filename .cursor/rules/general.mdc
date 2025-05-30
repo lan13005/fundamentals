@@ -6,7 +6,9 @@ alwaysApply: true
 # Project Documentation and Development Guidelines
 
 ## Project Overview
-This project uses the `edgartools` Python package to extract and analyze financial data from SEC EDGAR filings. The package provides functionality for accessing company financials, insider trades, fund holdings, and XBRL data.
+- Uses the `edgartools` Python package to extract and analyze financial data from SEC EDGAR filings. 
+- Scrapes `macrotrends.net` for Annual(Quarterly) Financial Data
+- Requests housing data from `zillow.com`
 
 ## File Reference Format
 When referencing files in documentation or code:
@@ -29,6 +31,7 @@ When referencing files in documentation or code:
 - ✅ Docstrings should follow Google style format
 - ✅ Include type hints for function parameters and return values
 - ✅ Use `rich` python package to print any output
+- ✅ Read [styling.mdc](mdc:.cursor/rules/styling.mdc) for printing/plotting styling guidelines
 
 ### Documentation Reading Requirements
 When working with specific components, developers must read the following documentation:
@@ -48,7 +51,7 @@ When working with specific components, developers must read the following docume
 ## Architecture Guidelines
 
 ### Core Files
-The following files form the core of the project and must always be updated together when adding new functionality:
+The following files form the core of the project and must always be updated together when adding new *tool* functionality:
 - [test_integration.py](mdc:tests/test_integration.py): Integration tests for all tools and features
 - [server.py](mdc:fundamentals/server.py): Main FastMCP server implementation and tool registration
 - [tools.py](mdc:fundamentals/tools.py): Tool implementations and business logic
@@ -57,6 +60,7 @@ The following files form the core of the project and must always be updated toge
 
 ### MCP Server Architecture
 - ✅ Keep [server.py](mdc:fundamentals/server.py) clean and minimal
+- ✅ Read [tool-implementation.md](mdc:.cursor/rules/tool-implementation.md) for guidelines on implementing new tools
 - ✅ All tool functionality must be:
   - Imported from appropriate modules
   - Decorated with `@mcp.tool()` to be an available tool
@@ -64,6 +68,7 @@ The following files form the core of the project and must always be updated toge
   - Contain descriptive docstrings
   - Properly registered in [server.py](mdc:fundamentals/server.py)
   - Covered by tests in [test_integration.py](mdc:tests/test_integration.py)
+  - If MCP related errors occur, refer to [mcp-tool-error-logs.md](mdc:.cursor/rules/mcp-tool-error-logs.md).
 
 ### Code Organization
 - ✅ [tools.py](mdc:fundamentals/tools.py) contains all the available tools

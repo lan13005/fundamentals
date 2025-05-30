@@ -87,19 +87,19 @@ def print_rich_help(parser=None, subcommand=None):
 
         notes = """
         [bold]Options:[/bold]
-          [cyan]-h[/cyan], [cyan]--help[/cyan]    Show this help message and exit
+            [cyan]-h[/cyan], [cyan]--help[/cyan]    Show this help message and exit
 
         [bold]For subcommand-specific options, use:[/bold]
-          fund [cyan]<subcommand>[/cyan] [yellow]--help[/yellow]
+            fund [cyan]<subcommand>[/cyan] [yellow]--help[/yellow]
         """
         console.print(Panel(notes.strip(), title="[bold magenta]Notes", border_style="blue"))
 
 
-def run_diagnose_cursor_mcp(args):
+def run_print_mcp_logs(args):
     """Run diagnostics on Cursor MCP logs."""
-    from fundamentals.utility.diagnose_cursor_mcp import diagnose_cursor_mcp
+    from fundamentals.utility.print_mcp_logs import print_mcp_logs
 
-    diagnose_cursor_mcp(range_arg=args.range)
+    print_mcp_logs(range_arg=args.range)
 
 
 def run_swap_mdc(args):
@@ -107,13 +107,6 @@ def run_swap_mdc(args):
     from fundamentals.utility.swap_mdc import swap_mdc
 
     swap_mdc()
-
-
-def run_spread_sim(args):
-    """Run ETF vs. momentum basket spread simulation and print results."""
-    from fundamentals.utility.simulate_market import run_etf_vs_momentum_simulation
-
-    run_etf_vs_momentum_simulation()
 
 
 def run_macrotrends(args):
@@ -127,6 +120,21 @@ def run_macrotrends(args):
         freq=args.freq,
         force=args.force,
         date=args.date,
+    )
+
+
+def run_housing(args):
+    """Run Zillow housing data analysis for specified city and state."""
+    from fundamentals.utility.zillow_housing import run_zillow_housing_analysis
+    
+    city = args.city.lower()
+    city = city[0].upper() + city[1:]
+    state = args.state.upper()
+    
+    run_zillow_housing_analysis(
+        city=city,
+        state=state,
+        ignore_cache=args.ignore_cache,
     )
 
 
@@ -180,9 +188,9 @@ def main():
 
     # diagnose-cursor-mcp
     parser_dcm = subparsers.add_parser(
-        "diagnose-cursor-mcp",
-        help="Diagnose Cursor MCP logs for errors and successes",
-        description="Analyze Cursor MCP logs for errors and successes. Optionally specify a range of logs to analyze.",
+        "print-mcp-logs",
+        help="Print Cursor MCP logs for errors and successes",
+        description="Print Cursor MCP logs for errors and successes. Optionally specify a range of logs to analyze.",
         add_help=False,
     )
     parser_dcm.add_argument(
@@ -191,7 +199,7 @@ def main():
         default=None,
         help="Range of reverse-time-sorted logs to analyze: N, N:M, N:, :M (optional)",
     )
-    parser_dcm.set_defaults(func=run_diagnose_cursor_mcp)
+    parser_dcm.set_defaults(func=run_print_mcp_logs)
 
     # swap-mdc
     parser_swap = subparsers.add_parser(
@@ -202,14 +210,29 @@ def main():
     )
     parser_swap.set_defaults(func=run_swap_mdc)
 
-    # spread-sim
-    parser_spread = subparsers.add_parser(
-        "spread-sim",
-        help="Run ETF vs. momentum basket spread simulation",
-        description="Run ETF vs. momentum basket spread simulation and print results.",
+    # housing
+    parser_housing = subparsers.add_parser(
+        "housing",
+        help="Analyze Zillow housing data for a specific city and state",
+        description="Download and analyze Zillow Home Value Index (ZHVI) data for a specified city and state. Creates visualizations and summary statistics for different housing tiers.",
         add_help=False,
     )
-    parser_spread.set_defaults(func=run_spread_sim)
+    parser_housing.add_argument(
+        "--city",
+        default="Denver",
+        help="City name to analyze (default: Denver)",
+    )
+    parser_housing.add_argument(
+        "--state",
+        default="CO", 
+        help="State abbreviation (default: CO)",
+    )
+    parser_housing.add_argument(
+        "--ignore-cache",
+        action="store_true",
+        help="Ignore existing cache and re-download data from Zillow",
+    )
+    parser_housing.set_defaults(func=run_housing)
 
     # macrotrends
     parser_macrotrends = subparsers.add_parser(

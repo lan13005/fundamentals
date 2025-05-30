@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: Guidelines on how to locate and analyze Cursor MCP logs.
+globs: .cursor/rules/*.mdc
 alwaysApply: false
 ---
 
@@ -16,7 +16,7 @@ alwaysApply: false
 ## 📁 1. Primary MCP Log Location
 
 ```
-~/Library/Application Support/Cursor/logs/[SESSION_ID]/window[N]/exthost/anysphere.cursor-always-local/Cursor MCP.log
+~/Library/Application\ Support/Cursor/logs/[SESSION_ID]/window[N]/exthost/anysphere.cursor-always-local/Cursor\ MCP.log
 ```
 
 - `[SESSION_ID]` is a timestamp-based directory, e.g., `20250313T140544`.
@@ -30,7 +30,7 @@ alwaysApply: false
 - Recent sessions have higher timestamps (i.e., later dates).
 - **Example**:
   ```
-  ~/Library/Application Support/Cursor/logs/20250313T140544/
+  ~/Library/Application\ Support/Cursor/logs/20250313T140544/
   ```
 
 ---
@@ -46,7 +46,7 @@ Other logs useful for debugging MCP issues include:
 
 - **Retrieval Log**:
   ```
-  window[N]/exthost/anysphere.cursor-retrieval/Cursor Indexing & Retrieval.log
+  window[N]/exthost/anysphere.cursor-retrieval/Cursor\ Indexing\ &\ Retrieval.log
   ```
 
 - **Window Renderer Log**:
