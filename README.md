@@ -9,3 +9,12 @@ Python package for fundamental analysis of companies for value investing:
 **Features:**
 - aimed for Cursor IDE with rules- and task-based agentic programming
 - using language models to generate reports and distil textual information using MCP tools
+
+# Installation
+Using [uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -r pyproject.toml
+```

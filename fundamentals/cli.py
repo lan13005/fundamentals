@@ -5,12 +5,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from fundamentals.utility.company_info import get_company_info
-from fundamentals.utility.diagnose_cursor_mcp import diagnose_cursor_mcp
-from fundamentals.utility.macrotrends_scraper import run_macrotrends_scraper
-from fundamentals.utility.simulate_market import run_etf_vs_momentum_simulation
-from fundamentals.utility.swap_mdc import swap_mdc
-
 console = Console()
 
 
@@ -103,21 +97,29 @@ def print_rich_help(parser=None, subcommand=None):
 
 def run_diagnose_cursor_mcp(args):
     """Run diagnostics on Cursor MCP logs."""
+    from fundamentals.utility.diagnose_cursor_mcp import diagnose_cursor_mcp
+
     diagnose_cursor_mcp(range_arg=args.range)
 
 
 def run_swap_mdc(args):
     """Swap .mdc and .md file extensions in .cursor/rules/."""
+    from fundamentals.utility.swap_mdc import swap_mdc
+
     swap_mdc()
 
 
 def run_spread_sim(args):
     """Run ETF vs. momentum basket spread simulation and print results."""
+    from fundamentals.utility.simulate_market import run_etf_vs_momentum_simulation
+
     run_etf_vs_momentum_simulation()
 
 
 def run_macrotrends(args):
     """Fetch financial data from Macrotrends for specified tickers."""
+    from fundamentals.utility.macrotrends_scraper import run_macrotrends_scraper
+
     slug_map_dict = dict(pair.split(":", 1) for pair in args.slug_map) if args.slug_map else None
     run_macrotrends_scraper(
         symbols=args.symbols,
@@ -130,6 +132,8 @@ def run_macrotrends(args):
 
 def run_company_info(args):
     """Fetch company information using yfinance for S&P 500 or custom tickers."""
+    from fundamentals.utility.company_info import get_company_info
+
     get_company_info(
         tickers=args.tickers,
         file_name=args.file_name,
@@ -211,7 +215,7 @@ def main():
     parser_macrotrends = subparsers.add_parser(
         "macrotrends",
         help="Fetch financial data from Macrotrends",
-        description="Fetch financial data from Macrotrends for specified tickers and store in parquet/duckdb format.",
+        description="Fetch financial data from Macrotrends for specified tickers and store in parquet format.",
         add_help=False,
     )
     parser_macrotrends.add_argument(

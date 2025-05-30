@@ -37,6 +37,7 @@ _RE_NON = re.compile(r"^[^a-zA-Z]*|[^a-zA-Z]*$")
 
 DEFAULT_PAGES = ["income-statement", "balance-sheet", "cash-flow-statement", "financial-ratios"]
 
+
 # ───────────── overrides I/O ───────────── #
 def load_file_overrides() -> dict[str, str]:
     if OVERRIDE_FILE.exists():
@@ -111,6 +112,7 @@ def clean_dataframe_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
             df_clean[col] = col_data.astype(str)
     return df_clean
 
+
 def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     """
     Finalize the merged dataframe by:
@@ -123,109 +125,107 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         - EPS (+derived features) uses 3yr rolling average
     """
     # Finally, transform the dataframe to have features as columns rather than datetimes
-    if 'field_name' in df.columns:
-        df = df.set_index('field_name').T
+    if "field_name" in df.columns:
+        df = df.set_index("field_name").T
         df.index.name = "date"
         df = df.reset_index()
 
         # Convert all non-date columns to numeric
         # Filling NaNs with 0s makes sense for this type of data
         for col in df.columns:
-            if col == 'date':
+            if col == "date":
                 continue
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
         # Convert date column to datetime
-        df['date'] = pd.to_datetime(df['date'])
+        df["date"] = pd.to_datetime(df["date"])
 
     # 1. Set up yfinance and date range
-    yt     = yf.Ticker(ticker)
-    start  = df['date'].min()
-    end    = df['date'].max() + pd.Timedelta(days=1) # offset to include the last day
+    yt = yf.Ticker(ticker)
+    start = df["date"].min()
+    end = df["date"].max() + pd.Timedelta(days=1)  # offset to include the last day
 
     # 2. Fetch raw price & dividends
-    prices = yt.history(start=start, end=end)[['Close']].rename(columns={'Close':'Price'})
-    divs   = yt.dividends.rename("Dividends Per Share")
+    prices = yt.history(start=start, end=end)[["Close"]].rename(columns={"Close": "Price"})
+    divs = yt.dividends.rename("Dividends Per Share")
 
     # 3. Resample to quarter-end
-    price_q = prices['Price'].resample('QE').last()
-    price_q.index = price_q.index.tz_localize(None)           # drop tz-info
+    price_q = prices["Price"].resample("QE").last()
+    price_q.index = price_q.index.tz_localize(None)  # drop tz-info
     price_q = price_q.loc[start:end]
 
-    div_q = divs.resample('QE').sum()
+    div_q = divs.resample("QE").sum()
     if div_q.index.tz is not None:
         div_q.index = div_q.index.tz_localize(None)
-    div_q = div_q.loc[start:end].fillna(0)                    # fill missing quarters with 0
+    div_q = div_q.loc[start:end].fillna(0)  # fill missing quarters with 0
 
     # Align all datasets, print a remark on any alignment issues like data chopped off
     new_start = max(start, div_q.index.min(), price_q.index.min())
-    new_end   = min(end, div_q.index.max(), price_q.index.max()) + pd.Timedelta(days=1)
+    new_end = min(end, div_q.index.max(), price_q.index.max()) + pd.Timedelta(days=1)
     price_q = price_q.loc[new_start:new_end]
-    div_q   = div_q.loc[new_start:new_end]
-    df = df[(df['date'] > new_start) * (df['date'] < new_end)]
+    div_q = div_q.loc[new_start:new_end]
+    df = df[(df["date"] > new_start) * (df["date"] < new_end)]
 
     # # 4. Align back to your df dates
-    df = df.set_index('date').sort_index()
-    df['Price']               = price_q.reindex(df.index, method='ffill')
-    df['Dividends Per Share'] = div_q.reindex(df.index).fillna(0)       # already 0 where missing
+    df = df.set_index("date").sort_index()
+    df["Price"] = price_q.reindex(df.index, method="ffill")
+    df["Dividends Per Share"] = div_q.reindex(df.index).fillna(0)  # already 0 where missing
 
-    df['NWC']                  = df['Total Current Assets'] - df['Total Current Liabilities']
-    df['Net Fixed Assets']     = df['Property, Plant, And Equipment']
-    df['Capital Employed']     = df['NWC'] + df['Net Fixed Assets']
-    df['ROCE']                 = df['Operating Income'] / df['Capital Employed']
+    df["NWC"] = df["Total Current Assets"] - df["Total Current Liabilities"]
+    df["Net Fixed Assets"] = df["Property, Plant, And Equipment"]
+    df["Capital Employed"] = df["NWC"] + df["Net Fixed Assets"]
+    df["ROCE"] = df["Operating Income"] / df["Capital Employed"]
 
     # Statutory tax rates changed in 2017 from 35% to 21%
     #   This rate does not include state taxes, credits, international income, etc.
-    stat_rates = pd.Series(
-        df.index.year.map(lambda y: 0.35 if y < 2018 else 0.21),
-        index=df.index
-    )
+    stat_rates = pd.Series(df.index.year.map(lambda y: 0.35 if y < 2018 else 0.21), index=df.index)
 
     # Growth metrics
-    df['Revenue YoY'] = df['Revenue'].pct_change(periods=4)
+    df["Revenue YoY"] = df["Revenue"].pct_change(periods=4)
 
     # NOTE: our data is sorted with latest date first. Need to reverse, then roll, then reverse again
-    df['Taxes LTM']   = df['Income Taxes'].rolling(window=4).sum()
-    df['PreTax LTM']  = df['Pre-Tax Income'].rolling(window=4).sum()
-    df['ETR LTM']     = (df['Taxes LTM'] / df['PreTax LTM']).clip(0,1).ffill().fillna(stat_rates)
-    df['NOPAT LTM']   = df['Operating Income'].rolling(window=4).sum() * (1 - df['ETR LTM'])
-    df['Capital Employed Avg'] = df['Capital Employed'].rolling(window=4).mean() # average of 4 quarter-ends
-    df['ROIC LTM']   = df['NOPAT LTM'] / df['Capital Employed Avg'] # annualized ROIC
+    df["Taxes LTM"] = df["Income Taxes"].rolling(window=4).sum()
+    df["PreTax LTM"] = df["Pre-Tax Income"].rolling(window=4).sum()
+    df["ETR LTM"] = (df["Taxes LTM"] / df["PreTax LTM"]).clip(0, 1).ffill().fillna(stat_rates)
+    df["NOPAT LTM"] = df["Operating Income"].rolling(window=4).sum() * (1 - df["ETR LTM"])
+    df["Capital Employed Avg"] = df["Capital Employed"].rolling(window=4).mean()  # average of 4 quarter-ends
+    df["ROIC LTM"] = df["NOPAT LTM"] / df["Capital Employed Avg"]  # annualized ROIC
 
-    df['Total Debt']           = df['Long Term Debt'] + df['Net Current Debt']
-    df['Debt to Equity']       = df['Total Debt'] / df['Share Holder Equity']
-    df['Equity to Assets']     = df['Share Holder Equity'] / df['Total Assets']
-    df['Earnings LTM']         = df['Net Income'].rolling(window=4).sum()
-    df['Avg Earnings 3y']      = df['Earnings LTM'].rolling(window=3).mean() # backward rolling window
-    df['FCF']                  = (
-        df['Cash Flow From Operating Activities']
-    + df['Net Change In Property, Plant, And Equipment']
-    + df['Net Change In Intangible Assets']
+    df["Total Debt"] = df["Long Term Debt"] + df["Net Current Debt"]
+    df["Debt to Equity"] = df["Total Debt"] / df["Share Holder Equity"]
+    df["Equity to Assets"] = df["Share Holder Equity"] / df["Total Assets"]
+    df["Earnings LTM"] = df["Net Income"].rolling(window=4).sum()
+    df["Avg Earnings 3y"] = df["Earnings LTM"].rolling(window=3).mean()  # backward rolling window
+    df["FCF"] = (
+        df["Cash Flow From Operating Activities"]
+        + df["Net Change In Property, Plant, And Equipment"]
+        + df["Net Change In Intangible Assets"]
     )
-    df['FCF Margin']     = df['FCF'] / df['Revenue']
-    df['FCF LTM']        = df['FCF'].rolling(window=4).sum()
-    df['FCF Margin LTM'] = df['FCF'].rolling(window=4).sum() / df['Revenue'].rolling(window=4).sum()
+    df["FCF Margin"] = df["FCF"] / df["Revenue"]
+    df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
+    df["FCF Margin LTM"] = df["FCF"].rolling(window=4).sum() / df["Revenue"].rolling(window=4).sum()
 
-    df['Market Cap']           = df['Price'] * df['Shares Outstanding']
-    df['EPS 3y']               = df['Avg Earnings 3y'] / df['Shares Outstanding']
-    df['PE Ratio']             = df['Price'] / df['EPS 3y']
-    df['BV per share']         = df['Share Holder Equity'] / df['Shares Outstanding']
-    df['PB Ratio']             = df['Price'] / df['BV per share']
-    df['BV to Tangible Assets']= (
-        (df['Share Holder Equity'] - df['Goodwill And Intangible Assets'])
-        / df['Total Assets']
-    )
-    df['Enterprise Value']     = df['Market Cap'] + df['Total Debt'] - df['Cash On Hand']
-    df['EV to EBITDA']         = df['Enterprise Value'] / df['EBITDA']
-    df['Dividend Yield LTM']   = df['Dividends Per Share'].rolling(window=4).sum()
-    df['Dividend Yield']       = df['Dividend Yield LTM'] / df['Price']
-    df['FCF LTM']              = df['FCF'].rolling(window=4).sum()
-    df['FCF Yield LTM']        = df['FCF LTM'] / df['Enterprise Value']
+    df["Market Cap"] = df["Price"] * df["Shares Outstanding"]
+    df["EPS 3y"] = df["Avg Earnings 3y"] / df["Shares Outstanding"]
+    df["PE Ratio"] = df["Price"] / df["EPS 3y"]
+    df["BV per share"] = df["Share Holder Equity"] / df["Shares Outstanding"]
+    df["PB Ratio"] = df["Price"] / df["BV per share"]
+    df["BV to Tangible Assets"] = (df["Share Holder Equity"] - df["Goodwill And Intangible Assets"]) / df[
+        "Total Assets"
+    ]
+    df["Enterprise Value"] = df["Market Cap"] + df["Total Debt"] - df["Cash On Hand"]
+    df["EV to EBITDA"] = df["Enterprise Value"] / df["EBITDA"]
+    df["Dividend Yield LTM"] = df["Dividends Per Share"].rolling(window=4).sum()
+    df["Dividend Yield"] = df["Dividend Yield LTM"] / df["Price"]
+    df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
+    df["FCF Yield LTM"] = df["FCF LTM"] / df["Enterprise Value"]
 
     # Total return over 5 years using Compound Annual Growth Rate
-    df['TR Factor 5y'] = (df['Price'] + df['Dividends Per Share'].rolling(window=4*5).sum()) / df['Price'].shift(4*5)
-    df['TR CAGR 5y']  = df['TR Factor 5y'] ** (1/5) - 1
-    
+    df["TR Factor 5y"] = (df["Price"] + df["Dividends Per Share"].rolling(window=4 * 5).sum()) / df["Price"].shift(
+        4 * 5
+    )
+    df["TR CAGR 5y"] = df["TR Factor 5y"] ** (1 / 5) - 1
+
     # Everything at this point should be space-separated
     #   Switch to kebab-case for column names which is easier to reference
     df.columns = df.columns.str.replace(",", " ")
@@ -279,6 +279,7 @@ async def fetch_table(
     except Exception as e:
         console.print(f"[red]Error fetching data for {sym} {page}: {e}[/red]")
         import traceback
+
         console.print(traceback.format_exc())
         return pd.DataFrame()
 
@@ -373,7 +374,9 @@ def run_macrotrends_scraper(
             all_dfs.append(df)
     if all_dfs:
         result = pd.concat(all_dfs, ignore_index=True)
-        console.print(f"[bold green]✓ Loaded {len(result)} rows for {len(symbols)} symbol(s) for {snap_date}.[/bold green]")
+        console.print(
+            f"[bold green]✓ Loaded {len(result)} rows for {len(symbols)} symbol(s) for {snap_date}.[/bold green]"
+        )
         return result
     else:
         console.print("[red]No dataframes loaded.[/red]")

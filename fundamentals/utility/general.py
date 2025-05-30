@@ -2,6 +2,28 @@ import datetime as dt
 import re
 from typing import Optional
 
+import matplotlib as mpl
+import requests
+from bs4 import BeautifulSoup
+from cycler import cycler
+
+
+def get_sp500_tickers() -> list[str]:
+    """Get latest S&P 500 tickers from Wikipedia."""
+    wiki = requests.get("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies").text
+    table = BeautifulSoup(wiki, "lxml").find("table", {"id": "constituents"})
+    tickers = [row.find_all("td")[0].text.strip() for row in table.find_all("tr")[1:]]
+    tickers = [t.replace(".", "-") for t in tickers]  # BRK.B -> BRK-B
+    return tickers
+
+
+def get_nasdaq_tickers() -> list[str]:
+    """Get the NASDAQ tickers from Nasdaq."""
+    wiki = requests.get("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt").text
+    tickers = [t.split("|")[0] for t in wiki.split("\n")[1:] if len(t) > 0]
+    tickers = [t.replace(".", "-") for t in tickers]  # BRK.B -> BRK-B
+    return tickers
+
 
 def get_latest_quarter_end(today: Optional[dt.date] = None) -> dt.date:
     """Return the most recent completed financial quarter end date relative to today."""
@@ -199,3 +221,57 @@ def reformat_markdown_financial_table(markdown_text_input: str) -> str:
     elif not markdown_text_input.strip() and final_output == "\n":
         final_output = ""
     return final_output
+
+
+def update_plot_style():
+    """
+    Apply pastel color palette, no grids
+    """
+    pastel_colors = [
+        "tab:blue",
+        "tab:orange",
+        "tab:green",
+        "tab:red",
+        "tab:grey",
+        "tab:pink",
+        "tab:brown",
+        "tab:purple",
+    ]
+
+    mpl.rcParams.update(
+        {
+            # Colors
+            "axes.prop_cycle": cycler("color", pastel_colors),
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            # Spines
+            "axes.edgecolor": "black",
+            "axes.linewidth": 1.0,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            # Ticks
+            "xtick.bottom": True,
+            "xtick.top": True,
+            "ytick.left": True,
+            "ytick.right": True,
+            "xtick.direction": "out",
+            "ytick.direction": "out",
+            "xtick.major.size": 5,
+            "ytick.major.size": 5,
+            # Fonts
+            "font.family": "sans-serif",
+            "font.sans-serif": ["Helvetica", "Arial", "sans-serif"],
+            "font.size": 12,
+            "axes.labelsize": 12,
+            "axes.titlesize": 14,
+            # Lines & markers
+            "lines.linewidth": 1.2,
+            "lines.markersize": 6,
+            "markers.fillstyle": "full",
+            # Legend
+            "legend.frameon": False,
+            "legend.loc": "best",
+            # Disable grid
+            "axes.grid": False,
+        }
+    )
