@@ -128,7 +128,7 @@ def run_housing(args):
     from fundamentals.utility.zillow_housing import run_zillow_housing_analysis
     
     city = args.city.lower()
-    city = city[0].upper() + city[1:]
+    city = " ".join(word[0].upper() + word[1:] for word in city.split())
     state = args.state.upper()
     
     run_zillow_housing_analysis(
