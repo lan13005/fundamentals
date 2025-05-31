@@ -1,0 +1,52 @@
+[
+  {
+    "date": "2000-03-10",
+    "event": "Tech Bubble Peak",
+    "description": "The Nasdaq Composite peaked, signaling the end of the late-1990s tech-driven equity boom. The subsequent market downturn contributed to reduced household wealth and tightened credit availability, slowing demand for housing nationwide."
+  },
+  {
+    "date": "2000-10-03",
+    "event": "Federal Reserve Rate Cut to 6.5%",
+    "description": "In response to early signs of economic slowdown, the Fed began a series of interest-rate cuts. Lower borrowing costs boosted mortgage demand and helped sustain home‐price appreciation through the early 2000s."
+  },
+  {
+    "date": "2007-12-01",
+    "event": "Early Signs of Subprime Crisis",
+    "description": "By December 2007, rising mortgage delinquencies in subprime loans signaled a downturn in the housing market. Home‐price growth stalled and began to decline as credit tightened."
+  },
+  {
+    "date": "2008-09-15",
+    "event": "Lehman Brothers Bankruptcy",
+    "description": "The collapse of Lehman intensified the 2008 financial crisis. Credit markets froze, home‐price declines accelerated, and nationwide housing values fell sharply over the next 18 months."
+  },
+  {
+    "date": "2009-03-01",
+    "event": "U.S. Housing Market Bottom",
+    "description": "Home‐price indices (e.g., Case-Shiller) reached their trough. Federal actions—such as the Home Affordable Modification Program (HAMP) and the Fed’s zero‐rate policy—laid groundwork for a gradual recovery."
+  },
+  {
+    "date": "2012-06-01",
+    "event": "Turnaround in U.S. Home Prices",
+    "description": "By mid-2012, major home‐price indices posted year‐over‐year gains as the Fed’s QE2/QE3 programs, improving labor markets, and renewed consumer confidence helped jump-start the housing recovery."
+  },
+  {
+    "date": "2020-03-13",
+    "event": "COVID-19 National Emergency Declared",
+    "description": "The U.S. declared a national emergency. The Federal Reserve cut rates to near zero and launched additional quantitative easing. Combined with remote‐work flexibility, housing demand and prices surged through 2021 into early 2022."
+  },
+  {
+    "date": "2022-03-16",
+    "event": "Fed’s First Pandemic-Era Rate Hike",
+    "description": "To combat rising inflation, the Fed raised the federal funds rate from 0%–0.25% to 0.25%–0.50%. Mortgage rates climbed sharply, curbing affordability and triggering a slowdown (and modest decline) in home‐price growth beginning spring 2022."
+  },
+  {
+    "date": "2023-11-01",
+    "event": "Mortgage Rates Stabilize Above 7%",
+    "description": "After successive rate hikes, 30-year fixed mortgage rates hovered above 7%. Buyer demand weakened further, and home‐price appreciation cooled to near‐flat in many markets."
+  },
+  {
+    "date": "2024-06-01",
+    "event": "Fed Pauses Rate Hikes",
+    "description": "Following a period of rate‐hike cycles, the Fed paused. With borrowing costs steady, home‐price growth began to stabilize, signaling a new phase of market equilibrium."
+  }
+]

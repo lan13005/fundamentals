@@ -1,6 +1,7 @@
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+import json
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -130,8 +131,33 @@ def filter_city_data(datasets: dict, city: str, state: str) -> dict:
     return filtered
 
 
+def load_housing_events(housing_data_dir: Path) -> list:
+    """Load housing market inflection events from JSON file.
+    
+    Args:
+        housing_data_dir: Directory containing housing data
+        
+    Returns:
+        List of event dictionaries with date, event, and description
+    """
+    events_file = housing_data_dir / "city_data" / "usa_housing_inflections.json"
+    
+    if not events_file.exists():
+        console.print(f"[yellow]Warning: Events file not found at {events_file}[/yellow]")
+        return []
+    
+    try:
+        with open(events_file, 'r') as f:
+            events = json.load(f)
+        console.print(f"[green]Loaded {len(events)} housing market events[/green]")
+        return events
+    except Exception as e:
+        console.print(f"[red]Error loading events file: {e}[/red]")
+        return []
+
+
 def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: Path) -> None:
-    """Create and save housing price plot.
+    """Create and save housing price plot with market events.
     
     Args:
         filtered_data: Dictionary of filtered DataFrames
@@ -147,8 +173,12 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
         "single_family": "#2ca02c" # green
     }
     
-    fig, ax = plt.subplots(figsize=(12, 7))
+    # Create figure with larger size for better text placement
+    fig, ax = plt.subplots(figsize=(16, 10))
     
+    # Plot housing data
+    date_range = None
+    data_max = 0
     for data_type, data in filtered_data.items():
         if not data.empty:
             # Date columns start at index 9
@@ -158,7 +188,96 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
             ax.plot(dates, values, 
                    label=data_type.replace("_", " ").title(),
                    color=colors[data_type],
-                   linewidth=2)
+                   linewidth=2.5)
+            
+            if date_range is None:
+                date_range = (dates.min(), dates.max())
+            
+            # Track max value for line positioning
+            max_val = max([v for v in values if pd.notna(v)])
+            if max_val > data_max:
+                data_max = max_val
+    
+    # Load and add housing market events
+    events = load_housing_events(Path("housing_data/"))
+    
+    if events and date_range:
+        # Filter events to date range of data
+        filtered_events = []
+        for event in events:
+            event_date = pd.to_datetime(event['date'])
+            if date_range[0] <= event_date <= date_range[1]:
+                filtered_events.append(event)
+        
+        # Add event annotations
+        y_min, y_max = ax.get_ylim()
+        y_range = y_max - y_min
+        
+        # Expand ylim to create space for text boxes within the figure
+        text_space_ratio = 0.25  # 25% extra space at top for text
+        new_y_max = y_max + (text_space_ratio * y_range)
+        ax.set_ylim(y_min, new_y_max)
+        
+        # Recalculate range with new limits
+        y_range = new_y_max - y_min
+        
+        # Create varied heights for text to avoid overlap
+        num_events = len(filtered_events)
+        if num_events > 0:
+            # Create staggered heights within the expanded area
+            height_positions = []
+            # Start text area just above the original data area
+            text_start = y_max + 0.02 * y_range
+            text_height = (new_y_max - text_start) * 0.8  # Use 80% of available text space
+            
+            for i in range(num_events):
+                # Create 4 different height levels, cycling through them
+                level = i % 4
+                height = text_start + (level * text_height / 4) + (text_height / 8)
+                height_positions.append(height)
+        
+        for i, event in enumerate(filtered_events):
+            event_date = pd.to_datetime(event['date'])
+            
+            # Draw dotted black line from near the top of original data down
+            line_start_y = data_max + 0.02 * (y_max - y_min)  # Use original y_range for line start
+            line_end_y = y_min
+            
+            ax.plot([event_date, event_date], [line_start_y, line_end_y],
+                   color='black', 
+                   linestyle=':', 
+                   alpha=0.6, 
+                   linewidth=1.5)
+            
+            # Format event name with newlines for longer descriptions
+            event_name = event['event']
+            if len(event_name) > 25:  # Break long event names
+                words = event_name.split()
+                mid_point = len(words) // 2
+                event_name = ' '.join(words[:mid_point]) + '\n' + ' '.join(words[mid_point:])
+            
+            # Simple text annotation within the figure bounds
+            text_y = height_positions[i]
+            
+            ax.text(event_date, text_y,
+                   event_name,
+                   fontsize=8,
+                   ha='center',
+                   va='center',
+                   bbox=dict(boxstyle="round,pad=0.3",
+                            facecolor='white',
+                            edgecolor='black',
+                            alpha=0.8),
+                   rotation=0)
+            
+            # Add date label
+            ax.text(event_date, line_start_y + 0.01 * (y_max - y_min),
+                   event_date.strftime('%Y-%m'),
+                   fontsize=7,
+                   ha='center',
+                   va='bottom',
+                   color='black',
+                   alpha=0.7)
     
     ax.set_xlabel("Date", fontsize=12)
     ax.set_ylabel("Home Value Index ($)", fontsize=12)
@@ -172,12 +291,14 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
     
     plt.tight_layout()
     
-    # Save plot
-    output_file = output_dir / f"{city}_{state}_zillow_housing.png"
-    plt.savefig(output_file, dpi=150)
+    # Save plot with higher DPI for better quality
+    output_file = output_dir / f"{city}_{state}_zillow_housing_with_events.png"
+    plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     
-    console.print(f"[green]Plot saved:[/green] {output_file}")
+    console.print(f"[green]Enhanced plot with market events saved:[/green] {output_file}")
+    if events:
+        console.print(f"[blue]Included {len([e for e in events if date_range[0] <= pd.to_datetime(e['date']) <= date_range[1]])} market events in date range[/blue]")
 
 
 def print_summary_table(filtered_data: dict, city: str, state: str) -> None:
