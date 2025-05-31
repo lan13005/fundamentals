@@ -149,7 +149,7 @@ def run_housing(args):
     run_zillow_housing_analysis(
         city=city,
         state=state,
-        ignore_cache=args.ignore_cache,
+        update_cache=args.update_cache,
     )
 
 
@@ -243,9 +243,9 @@ def main():
         help="State abbreviation (default: CO)",
     )
     parser_housing.add_argument(
-        "--ignore-cache",
+        "--update-cache",
         action="store_true",
-        help="Ignore existing cache and re-download data from Zillow",
+        help="Force update cache by re-downloading data from Zillow",
     )
     parser_housing.set_defaults(func=run_housing)
 

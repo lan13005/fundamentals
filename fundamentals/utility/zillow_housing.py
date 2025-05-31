@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from rich import box
 from rich.console import Console
@@ -22,15 +23,14 @@ ZILLOW_URLS = {
 }
 
 
-def get_cache_filename(data_type: str, date_str: str) -> str:
-    """Generate cache filename with date appended.
+def get_cache_filename(data_type: str) -> str:
+    """Generate cache filename without date.
 
     Args:
         data_type: Type of data (low, top, smoothed, single_family)
-        date_str: Date string in YYYY-MM-DD format
 
     Returns:
-        Cache filename with date appended
+        Cache filename
     """
     base_name = {
         "low": "City_zhvi_uc_sfrcondo_tier_0.0_0.33_sm_sa_month",
@@ -38,7 +38,7 @@ def get_cache_filename(data_type: str, date_str: str) -> str:
         "smoothed": "City_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month",
         "single_family": "City_zhvi_uc_sfr_tier_0.33_0.67_sm_sa_month",
     }
-    return f"{base_name[data_type]}_{date_str}.csv"
+    return f"{base_name[data_type]}.csv"
 
 
 def download_zillow_data(data_type: str, cache_file: Path, force: bool = False) -> None:
@@ -50,7 +50,10 @@ def download_zillow_data(data_type: str, cache_file: Path, force: bool = False) 
         force: Whether to force download even if cache exists
     """
     if cache_file.exists() and not force:
-        console.print(f"[green]Using cached data:[/green] {cache_file.name}")
+        # Show file modification date
+        mod_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
+        console.print(f"[green]Using cached data:[/green] {cache_file.name} (modified: {mod_time.strftime('%Y-%m-%d %H:%M')})")
+        console.print("[dim]Note: Zillow updates data at the end of each month. Use --update-cache to force refresh.[/dim]")
         return
 
     if force and cache_file.exists():
@@ -62,18 +65,19 @@ def download_zillow_data(data_type: str, cache_file: Path, force: bool = False) 
 
     try:
         urllib.request.urlretrieve(url, cache_file)
-        console.print(f"[green]Downloaded:[/green] {cache_file.name}")
+        mod_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
+        console.print(f"[green]Downloaded:[/green] {cache_file.name} (created: {mod_time.strftime('%Y-%m-%d %H:%M')})")
+        console.print("[dim]Zillow updates data at the end of each month.[/dim]")
     except Exception as e:
         console.print(f"[red]Error downloading {data_type} data: {e}[/red]")
         raise
 
 
-def load_zillow_datasets(cache_dir: Path, date_str: str, force: bool = False) -> dict:
+def load_zillow_datasets(cache_dir: Path, force: bool = False) -> dict:
     """Load all Zillow datasets, downloading if necessary.
 
     Args:
         cache_dir: Directory for cache files
-        date_str: Date string for cache filenames
         force: Whether to force re-download
 
     Returns:
@@ -93,7 +97,7 @@ def load_zillow_datasets(cache_dir: Path, date_str: str, force: bool = False) ->
         task = progress.add_task("Loading Zillow datasets...", total=len(ZILLOW_URLS))
 
         for data_type in ZILLOW_URLS.keys():
-            cache_file = cache_dir / get_cache_filename(data_type, date_str)
+            cache_file = cache_dir / get_cache_filename(data_type)
 
             # Download if needed
             download_zillow_data(data_type, cache_file, force)
@@ -176,6 +180,15 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
     # Create figure with larger size for better text placement
     fig, ax = plt.subplots(figsize=(16, 10))
 
+    # First pass: determine the maximum value of the "top" dataset for capping growth curves
+    top_max_value = None
+    if "top" in filtered_data and not filtered_data["top"].empty:
+        top_data = filtered_data["top"]
+        top_values = top_data.values[0][9:]  # Get values from column 9 onwards
+        valid_top_values = [v for v in top_values if pd.notna(v)]
+        if valid_top_values:
+            top_max_value = max(valid_top_values)
+
     # Plot housing data
     date_range = None
     data_max = 0
@@ -184,16 +197,80 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
             # Date columns start at index 9
             dates = pd.to_datetime(data.columns[9:])
             values = data.values[0][9:]
+            
+            # Filter out NaN values for both dates and values
+            valid_mask = pd.notna(values)
+            dates_clean = dates[valid_mask]
+            values_clean = values[valid_mask]
 
-            ax.plot(dates, values, label=data_type.replace("_", " ").title(), color=colors[data_type], linewidth=2.5)
+            # Calculate growth factor for Zillow datasets
+            if len(values_clean) > 1:
+                growth_factor = values_clean[-1] / values_clean[0]
+                label_with_growth = f"{data_type.replace('_', ' ').title()} ({growth_factor:.1f}x)"
+            else:
+                label_with_growth = data_type.replace("_", " ").title()
+
+            ax.plot(dates_clean, values_clean, label=label_with_growth, color=colors[data_type], linewidth=2.5)
+            
+            # Calculate growth curve for the same date points as the data
+            if len(dates_clean) > 1:
+                def growth_curve_for_dates(annual_rate, N0, start_date, target_dates):
+                    """Calculate growth curve values for specific dates."""
+                    days_from_start = (target_dates - start_date).days
+                    daily_growth_factor = (1 + annual_rate) ** (1 / 365)
+                    prices = N0 * daily_growth_factor ** days_from_start
+                    return prices
+                
+                # Generate growth curve for the actual data dates
+                if data_type == "low":
+                    # Plot growth curves with capping logic
+                    for rate, label, style in [
+                        (0.03, "3% (Treasury Bills)", "solid"),
+                        (0.06, "6% (Bonds)", "dotted"),
+                        (0.10, "10% (S&P 500)", "dashed")
+                    ]:
+                        growth_values = growth_curve_for_dates(rate, values_clean[0], dates_clean[0], dates_clean)
+                        
+                        # Cap growth curve if it exceeds top dataset maximum
+                        if top_max_value is not None:
+                            # Find where growth curve first exceeds top max
+                            valid_indices = growth_values <= top_max_value
+                            if not valid_indices.all():
+                                # Find the last valid index
+                                last_valid_idx = np.where(valid_indices)[0]
+                                if len(last_valid_idx) > 0:
+                                    last_valid_idx = last_valid_idx[-1]
+                                    # Only plot up to the last valid point
+                                    capped_dates = dates_clean[:last_valid_idx + 1]
+                                    capped_values = growth_values[:last_valid_idx + 1]
+                                else:
+                                    # All values exceed top max, don't plot this growth curve
+                                    continue
+                            else:
+                                # No capping needed
+                                capped_dates = dates_clean
+                                capped_values = growth_values
+                        else:
+                            # No top data available, plot without capping
+                            capped_dates = dates_clean
+                            capped_values = growth_values
+                        
+                        # Calculate growth factor for this curve
+                        curve_growth_factor = growth_values[-1] / growth_values[0]
+                        label_with_growth = f"{label} ({curve_growth_factor:.1f}x)"
+                        
+                        # Set line properties based on style
+                        linewidth = 3 if style == "dotted" else 2
+                        ax.plot(capped_dates, capped_values,
+                                label=label_with_growth, color=colors[data_type], 
+                                linewidth=linewidth, linestyle=style, alpha=0.7)
 
             if date_range is None:
-                date_range = (dates.min(), dates.max())
+                date_range = (dates_clean.min(), dates_clean.max())
 
             # Track max value for line positioning
-            max_val = max([v for v in values if pd.notna(v)])
-            if max_val > data_max:
-                data_max = max_val
+            max_val = max([v for v in values_clean if pd.notna(v)])
+            data_max = max(data_max, max_val)
 
     # Load and add housing market events
     events = load_housing_events(Path("housing_data/"))
@@ -286,7 +363,7 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
     ax.set_ylabel("Home Value Index ($)", fontsize=12)
     ax.set_title(f"Zillow Home Value Index - {city}, {state}", fontsize=14)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=10)
+    ax.legend(fontsize=12, loc="center left")
 
     # Style the spines
     for spine in ax.spines.values():
@@ -321,7 +398,7 @@ def print_summary_table(filtered_data: dict, city: str, state: str) -> None:
     )
     table.add_column("Dataset", style="cyan", no_wrap=True)
     table.add_column("Latest Value", style="yellow", justify="right")
-    table.add_column("Records", style="yellow", justify="right")
+    table.add_column("Months Recorded", style="yellow", justify="right")
 
     for data_type, data in filtered_data.items():
         if not data.empty:
@@ -342,22 +419,19 @@ def print_summary_table(filtered_data: dict, city: str, state: str) -> None:
     console.print(table)
 
 
-def run_zillow_housing_analysis(city: str = "Denver", state: str = "CO", ignore_cache: bool = False) -> None:
+def run_zillow_housing_analysis(city: str = "Denver", state: str = "CO", update_cache: bool = False) -> None:
     """Run Zillow housing analysis for specified city and state.
 
     Args:
         city: City name
         state: State abbreviation
-        ignore_cache: Whether to ignore existing cache and re-download
+        update_cache: Whether to force cache update and re-download
     """
     console.rule("[bold blue]Zillow Housing Data Analysis")
 
     # Setup directories
     cache_dir = Path("housing_data")
     cache_dir.mkdir(exist_ok=True)
-
-    # Use current date for cache files
-    date_str = datetime.now().strftime("%Y-%m-%d")
 
     # Print parameters
     params_table = Table(
@@ -370,14 +444,13 @@ def run_zillow_housing_analysis(city: str = "Denver", state: str = "CO", ignore_
     params_table.add_column("Value", style="yellow", justify="right")
     params_table.add_row("City", city)
     params_table.add_row("State", state)
-    params_table.add_row("Cache Date", date_str)
-    params_table.add_row("Ignore Cache", str(ignore_cache))
+    params_table.add_row("Update Cache", str(update_cache))
 
     console.print(params_table)
 
     try:
         # Load datasets
-        datasets = load_zillow_datasets(cache_dir, date_str, ignore_cache)
+        datasets = load_zillow_datasets(cache_dir, update_cache)
 
         # Filter for city/state
         filtered_data = filter_city_data(datasets, city, state)
@@ -397,7 +470,8 @@ def run_zillow_housing_analysis(city: str = "Denver", state: str = "CO", ignore_
         • Smoothed tier (33rd-67th percentile): Middle market homes
         • Single family homes: Detached single-family residences
 
-        Data is cached locally with today's date and will be reused unless --ignore-cache is specified.
+        Data is cached locally and will be reused unless --update-cache is specified.
+        Zillow updates their data at the end of each month.
         """
 
         console.print(Panel(explanation.strip(), title="Explanation", border_style="blue"))
