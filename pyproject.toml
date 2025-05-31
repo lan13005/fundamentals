@@ -40,6 +40,7 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "W", "B", "UP", "PL", "RUF"]
 ignore = ["N806", "RUF001", "N803", "PLR0913", "PLR2004", "RUF013",
             "PLR0912", "PLR0915", "B006", "E501", "UP006", "UP007", "UP035",
+            "PLR0911", "PLW0603",
             "W293"]
 
 [tool.ruff.format]

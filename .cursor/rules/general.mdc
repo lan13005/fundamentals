@@ -6,7 +6,7 @@ alwaysApply: true
 # Project Documentation and Development Guidelines
 
 ## Project Overview
-- Uses the `edgartools` Python package to extract and analyze financial data from SEC EDGAR filings. 
+- Uses the `edgartools` Python package to extract and analyze financial data from SEC EDGAR filings.
 - Scrapes `macrotrends.net` for Annual(Quarterly) Financial Data
 - Requests housing data from `zillow.com`
 

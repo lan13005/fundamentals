@@ -114,23 +114,38 @@ def run_macrotrends(args):
     from fundamentals.utility.macrotrends_scraper import run_macrotrends_scraper
 
     slug_map_dict = dict(pair.split(":", 1) for pair in args.slug_map) if args.slug_map else None
+
+    # Prepare safety kwargs
+    safety_kwargs = {}
+    if hasattr(args, "safety_preset") and args.safety_preset:
+        safety_kwargs["safety_preset"] = args.safety_preset
+    if hasattr(args, "max_concurrent") and args.max_concurrent is not None:
+        safety_kwargs["max_concurrent"] = args.max_concurrent
+    if hasattr(args, "request_delay") and args.request_delay is not None:
+        safety_kwargs["request_delay"] = args.request_delay
+    if hasattr(args, "max_retries") and args.max_retries is not None:
+        safety_kwargs["max_retries"] = args.max_retries
+    if hasattr(args, "backoff_factor") and args.backoff_factor is not None:
+        safety_kwargs["backoff_factor"] = args.backoff_factor
+
     run_macrotrends_scraper(
         symbols=args.symbols,
         slug_map=slug_map_dict,
         freq=args.freq,
         force=args.force,
         date=args.date,
+        **safety_kwargs,
     )
 
 
 def run_housing(args):
     """Run Zillow housing data analysis for specified city and state."""
     from fundamentals.utility.zillow_housing import run_zillow_housing_analysis
-    
+
     city = args.city.lower()
     city = " ".join(word[0].upper() + word[1:] for word in city.split())
     state = args.state.upper()
-    
+
     run_zillow_housing_analysis(
         city=city,
         state=state,
@@ -224,7 +239,7 @@ def main():
     )
     parser_housing.add_argument(
         "--state",
-        default="CO", 
+        default="CO",
         help="State abbreviation (default: CO)",
     )
     parser_housing.add_argument(
@@ -246,7 +261,7 @@ def main():
         nargs="+",
         required=True,
         metavar="TICKER",
-        help="List of ticker symbols to process",
+        help="List of ticker symbols to process (supports 'sp500' and 'nasdaq' special symbols that expand to full ticker lists)",
     )
     parser_macrotrends.add_argument(
         "--slug-map",
@@ -272,6 +287,40 @@ def main():
         metavar="YYYY-MM-DD",
         help="Snapshot date (default: today)",
     )
+
+    # Safety configuration arguments
+    safety_group = parser_macrotrends.add_argument_group("scraping safety options")
+    safety_group.add_argument(
+        "--safety-preset",
+        choices=["conservative", "balanced", "aggressive", "maximum"],
+        default="conservative",
+        help="Preset safety configuration (default: conservative) - overrides individual safety options",
+    )
+    safety_group.add_argument(
+        "--max-concurrent",
+        type=int,
+        metavar="N",
+        help="Maximum concurrent requests (1-4, default: varies by preset)",
+    )
+    safety_group.add_argument(
+        "--request-delay",
+        type=float,
+        metavar="SECONDS",
+        help="Delay between requests in seconds (0.3-2.0, default: varies by preset)",
+    )
+    safety_group.add_argument(
+        "--max-retries",
+        type=int,
+        metavar="N",
+        help="Maximum retry attempts (1-5, default: 3)",
+    )
+    safety_group.add_argument(
+        "--backoff-factor",
+        type=float,
+        metavar="FACTOR",
+        help="Exponential backoff multiplier (1.0-3.0, default: 2.0)",
+    )
+
     parser_macrotrends.set_defaults(func=run_macrotrends)
 
     # Handle help flags
