@@ -344,7 +344,7 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
             # Convert date column to datetime
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
-            
+
             # Check if we have valid dates
             if df["date"].isna().all():
                 console.print(f"[red]Warning: No valid dates found for {ticker}[/red]")
@@ -371,10 +371,10 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
                 divs = yt.dividends.rename("Dividends Per Share")
             except Exception as yf_error:
                 console.print(f"[yellow]Warning: Failed to fetch yfinance data for {ticker}: {yf_error}[/yellow]")
-                console.print(f"[yellow]Proceeding without price/dividend data[/yellow]")
+                console.print("[yellow]Proceeding without price/dividend data[/yellow]")
                 # Continue without yfinance data
                 prices = pd.DataFrame()
-                divs = pd.Series(dtype='float64', name="Dividends Per Share")
+                divs = pd.Series(dtype="float64", name="Dividends Per Share")
 
             # Only proceed with price/dividend calculations if we have the data
             if not prices.empty and len(divs) > 0:
@@ -392,27 +392,29 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
                 new_start = max(start, div_q.index.min(), price_q.index.min())
                 new_end = min(end, div_q.index.max(), price_q.index.max()) + pd.Timedelta(days=1)
                 console.print(f"[cyan]Debug: Calculated alignment range: {new_start} to {new_end}[/cyan]")
-                console.print(f"[cyan]Debug: Financial data date range: {df['date'].min()} to {df['date'].max()}[/cyan]")
+                console.print(
+                    f"[cyan]Debug: Financial data date range: {df['date'].min()} to {df['date'].max()}[/cyan]"
+                )
                 console.print(f"[cyan]Debug: Financial data before filtering: {len(df)} rows[/cyan]")
-                
+
                 price_q = price_q.loc[new_start:new_end]
                 div_q = div_q.loc[new_start:new_end]
-                
+
                 # FIXED: Use flexible approach instead of restrictive filtering
                 # Keep ALL financial data and add price/dividend data where available
-                console.print(f"[yellow]Using flexible approach: keeping all financial data[/yellow]")
+                console.print("[yellow]Using flexible approach: keeping all financial data[/yellow]")
                 df = df.set_index("date").sort_index()
-                
+
                 # Add price and dividend data by reindexing (fills NaN where no price data available)
                 df["Price"] = price_q.reindex(df.index, method="ffill")
                 df["Dividends Per Share"] = div_q.reindex(df.index).fillna(0)
-                
+
                 # Fill NaN prices with 0 for periods without price data
                 df["Price"] = df["Price"].fillna(0)
                 console.print(f"[cyan]Debug: Final shape after flexible alignment: {df.shape}[/cyan]")
             else:
                 # Set df index to date and add placeholder columns
-                console.print(f"[yellow]No price/dividend data available, using placeholders[/yellow]")
+                console.print("[yellow]No price/dividend data available, using placeholders[/yellow]")
                 df = df.set_index("date").sort_index()
                 df["Price"] = 0.0
                 df["Dividends Per Share"] = 0.0
@@ -427,7 +429,7 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         # Check if we have required columns before proceeding with calculations
         required_cols = ["Total Current Assets", "Total Current Liabilities", "Property, Plant, And Equipment"]
         missing_cols = [col for col in required_cols if col not in df.columns]
-        
+
         if missing_cols:
             console.print(f"[yellow]Warning: Missing columns for {ticker}: {missing_cols}[/yellow]")
             console.print(f"[yellow]Available columns: {list(df.columns)[:10]}... (showing first 10)[/yellow]")
@@ -462,22 +464,26 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
             df["Equity to Assets"] = df.get("Share Holder Equity", 0) / df.get("Total Assets", 1).replace(0, 1)
             df["Earnings LTM"] = df.get("Net Income", 0).rolling(window=4).sum()
             df["Avg Earnings 3y"] = df["Earnings LTM"].rolling(window=3).mean()  # backward rolling window
-            
+
             cash_flow_ops = df.get("Cash Flow From Operating Activities", 0)
             ppe_change = df.get("Net Change In Property, Plant, And Equipment", 0)
             intangible_change = df.get("Net Change In Intangible Assets", 0)
             df["FCF"] = cash_flow_ops + ppe_change + intangible_change
-            
+
             df["FCF Margin"] = df["FCF"] / df.get("Revenue", 1).replace(0, 1)
             df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
-            df["FCF Margin LTM"] = df["FCF"].rolling(window=4).sum() / df.get("Revenue", 1).rolling(window=4).sum().replace(0, 1)
+            df["FCF Margin LTM"] = df["FCF"].rolling(window=4).sum() / df.get("Revenue", 1).rolling(
+                window=4
+            ).sum().replace(0, 1)
 
             df["Market Cap"] = df["Price"] * df.get("Shares Outstanding", 0)
             df["EPS 3y"] = df["Avg Earnings 3y"] / df.get("Shares Outstanding", 1).replace(0, 1)
             df["PE Ratio"] = df["Price"] / df["EPS 3y"].replace(0, 1)
             df["BV per share"] = df.get("Share Holder Equity", 0) / df.get("Shares Outstanding", 1).replace(0, 1)
             df["PB Ratio"] = df["Price"] / df["BV per share"].replace(0, 1)
-            df["BV to Tangible Assets"] = (df.get("Share Holder Equity", 0) - df.get("Goodwill And Intangible Assets", 0)) / df.get("Total Assets", 1).replace(0, 1)
+            df["BV to Tangible Assets"] = (
+                df.get("Share Holder Equity", 0) - df.get("Goodwill And Intangible Assets", 0)
+            ) / df.get("Total Assets", 1).replace(0, 1)
             df["Enterprise Value"] = df["Market Cap"] + df["Total Debt"] - df.get("Cash On Hand", 0)
             df["EV to EBITDA"] = df["Enterprise Value"] / df.get("EBITDA", 1).replace(0, 1)
             df["Dividend Yield LTM"] = df["Dividends Per Share"].rolling(window=4).sum()
@@ -486,7 +492,9 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
             df["FCF Yield LTM"] = df["FCF LTM"] / df["Enterprise Value"].replace(0, 1)
 
             # Total return over 5 years using Compound Annual Growth Rate
-            df["TR Factor 5y"] = (df["Price"] + df["Dividends Per Share"].rolling(window=4 * 5).sum()) / df["Price"].shift(4 * 5).replace(0, 1)
+            df["TR Factor 5y"] = (df["Price"] + df["Dividends Per Share"].rolling(window=4 * 5).sum()) / df[
+                "Price"
+            ].shift(4 * 5).replace(0, 1)
             df["TR CAGR 5y"] = df["TR Factor 5y"] ** (1 / 5) - 1
 
         except Exception as calc_error:
@@ -513,6 +521,7 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     except Exception as e:
         console.print(f"[red]Error in finalize_merged_dataframe for {ticker}: {e}[/red]")
         import traceback
+
         console.print(f"[red]Traceback: {traceback.format_exc()}[/red]")
         return pd.DataFrame()
 
@@ -824,12 +833,14 @@ async def scrape_many(
             if valid_dfs:
                 console.print(f"[cyan]Debug: Found {len(valid_dfs)} valid dataframes for {s}[/cyan]")
                 for i, df in enumerate(valid_dfs):
-                    console.print(f"[cyan]Debug: DataFrame {i} shape: {df.shape}, columns: {list(df.columns)[:5]}...[/cyan]")
-                
+                    console.print(
+                        f"[cyan]Debug: DataFrame {i} shape: {df.shape}, columns: {list(df.columns)[:5]}...[/cyan]"
+                    )
+
                 merged = pd.concat(valid_dfs, ignore_index=True)
                 console.print(f"[cyan]Debug: Merged dataframe shape: {merged.shape}[/cyan]")
                 console.print(f"[cyan]Debug: Merged columns: {list(merged.columns)[:10]}...[/cyan]")
-                
+
                 merged = finalize_merged_dataframe(merged, s)
                 console.print(f"[cyan]Debug: Final dataframe shape after finalization: {merged.shape}[/cyan]")
 
@@ -1008,7 +1019,7 @@ def run_macrotrends_scraper(
     empty_symbols = []
     successful_symbols = []
     cached_symbols = []
-    
+
     # Configure safety settings with conservative default
     if safety_preset or safety_kwargs:
         if safety_preset:
@@ -1041,7 +1052,7 @@ def run_macrotrends_scraper(
     if not force:
         cached_data = load_cached_data(expanded_symbols, snap_date)
         symbols_to_scrape = [sym for sym in expanded_symbols if sym not in cached_data]
-        
+
         # Track cached symbols
         cached_symbols = list(cached_data.keys())
 
@@ -1059,13 +1070,13 @@ def run_macrotrends_scraper(
                         else:
                             valid_cached[sym] = df
                             successful_symbols.append(sym)
-                    
+
                     if valid_cached:
                         result = pd.concat(list(valid_cached.values()), ignore_index=True)
                         console.print(
                             f"[bold green]✓ Loaded {len(result)} rows from cache for {len(valid_cached)} symbol(s).[/bold green]"
                         )
-                        
+
                         # Print summary statistics
                         _print_scraping_statistics(successful_symbols, empty_symbols, failed_symbols, cached_symbols)
                         return result
@@ -1123,7 +1134,7 @@ def run_macrotrends_scraper(
 
     # Combine cached and scraped results
     all_results = {**cached_data, **scraped_results}
-    
+
     # Track cached symbols that had data
     for sym in cached_symbols:
         if sym in all_results and not all_results[sym].empty:
@@ -1161,22 +1172,23 @@ def run_macrotrends_scraper(
         return pd.DataFrame()
 
 
-def _print_scraping_statistics(successful_symbols: List[str], empty_symbols: List[str], 
-                             failed_symbols: List[str], cached_symbols: List[str]) -> None:
+def _print_scraping_statistics(
+    successful_symbols: List[str], empty_symbols: List[str], failed_symbols: List[str], cached_symbols: List[str]
+) -> None:
     """Print comprehensive scraping statistics to the user."""
-    console.print("\n" + "="*60)
+    console.print("\n" + "=" * 60)
     console.print("[bold]📊 SCRAPING STATISTICS SUMMARY[/bold]")
-    console.print("="*60)
-    
+    console.print("=" * 60)
+
     total_symbols = len(successful_symbols) + len(empty_symbols) + len(failed_symbols)
-    
+
     if successful_symbols:
         console.print(f"[green]✅ Successfully loaded data:[/green] {len(successful_symbols)} symbols")
         if len(successful_symbols) <= 10:
             console.print(f"   {', '.join(successful_symbols)}")
         else:
             console.print(f"   {', '.join(successful_symbols[:10])}... (showing first 10)")
-    
+
     if cached_symbols:
         cached_successful = [s for s in cached_symbols if s in successful_symbols]
         console.print(f"[cyan]💾 Used cached data:[/cyan] {len(cached_successful)} symbols")
@@ -1184,32 +1196,34 @@ def _print_scraping_statistics(successful_symbols: List[str], empty_symbols: Lis
             console.print(f"   {', '.join(cached_successful)}")
         else:
             console.print(f"   {', '.join(cached_successful[:10])}... (showing first 10)")
-    
+
     if empty_symbols:
         console.print(f"[yellow]⚠️  Empty dataframes (no financial data found):[/yellow] {len(empty_symbols)} symbols")
         console.print(f"   {', '.join(empty_symbols)}")
         console.print("   [dim]These symbols were fetched but contained no usable financial data[/dim]")
-    
+
     if failed_symbols:
         console.print(f"[red]❌ Failed to scrape:[/red] {len(failed_symbols)} symbols")
         console.print(f"   {', '.join(failed_symbols)}")
         console.print("   [dim]These symbols could not be fetched due to network/server errors[/dim]")
-    
+
     # Success rate calculation
     if total_symbols > 0:
         success_rate = (len(successful_symbols) / total_symbols) * 100
         console.print(f"\n[bold]Success Rate:[/bold] {success_rate:.1f}% ({len(successful_symbols)}/{total_symbols})")
-        
+
         if empty_symbols or failed_symbols:
             console.print("\n[yellow]💡 TROUBLESHOOTING TIPS:[/yellow]")
             if empty_symbols:
-                console.print("• Empty dataframes: Check if the ticker symbols are correct and have available financial data")
+                console.print(
+                    "• Empty dataframes: Check if the ticker symbols are correct and have available financial data"
+                )
                 console.print("• Some symbols may be new listings without sufficient historical data")
             if failed_symbols:
                 console.print("• Failed symbols: Try running with --force flag or check network connectivity")
                 console.print("• Consider using a more conservative safety preset if encountering rate limits")
-    
-    console.print("="*60 + "\n")
+
+    console.print("=" * 60 + "\n")
 
 
 def configure_scraping_safety(

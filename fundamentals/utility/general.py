@@ -247,15 +247,15 @@ def update_plot_style():
             # Spines
             "axes.edgecolor": "black",
             "axes.linewidth": 1.0,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
+            "axes.spines.top": True,
+            "axes.spines.right": True,
             # Ticks
             "xtick.bottom": True,
             "xtick.top": True,
             "ytick.left": True,
             "ytick.right": True,
-            "xtick.direction": "out",
-            "ytick.direction": "out",
+            "xtick.direction": "in",
+            "ytick.direction": "in",
             "xtick.major.size": 5,
             "ytick.major.size": 5,
             # Fonts

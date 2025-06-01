@@ -52,8 +52,12 @@ def download_zillow_data(data_type: str, cache_file: Path, force: bool = False) 
     if cache_file.exists() and not force:
         # Show file modification date
         mod_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
-        console.print(f"[green]Using cached data:[/green] {cache_file.name} (modified: {mod_time.strftime('%Y-%m-%d %H:%M')})")
-        console.print("[dim]Note: Zillow updates data at the end of each month. Use --update-cache to force refresh.[/dim]")
+        console.print(
+            f"[green]Using cached data:[/green] {cache_file.name} (modified: {mod_time.strftime('%Y-%m-%d %H:%M')})"
+        )
+        console.print(
+            "[dim]Note: Zillow updates data at the end of each month. Use --update-cache to force refresh.[/dim]"
+        )
         return
 
     if force and cache_file.exists():
@@ -197,7 +201,7 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
             # Date columns start at index 9
             dates = pd.to_datetime(data.columns[9:])
             values = data.values[0][9:]
-            
+
             # Filter out NaN values for both dates and values
             valid_mask = pd.notna(values)
             dates_clean = dates[valid_mask]
@@ -211,26 +215,27 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
                 label_with_growth = data_type.replace("_", " ").title()
 
             ax.plot(dates_clean, values_clean, label=label_with_growth, color=colors[data_type], linewidth=2.5)
-            
+
             # Calculate growth curve for the same date points as the data
             if len(dates_clean) > 1:
+
                 def growth_curve_for_dates(annual_rate, N0, start_date, target_dates):
                     """Calculate growth curve values for specific dates."""
                     days_from_start = (target_dates - start_date).days
                     daily_growth_factor = (1 + annual_rate) ** (1 / 365)
-                    prices = N0 * daily_growth_factor ** days_from_start
+                    prices = N0 * daily_growth_factor**days_from_start
                     return prices
-                
+
                 # Generate growth curve for the actual data dates
                 if data_type == "low":
                     # Plot growth curves with capping logic
                     for rate, label, style in [
                         (0.03, "3% (Treasury Bills)", "solid"),
                         (0.06, "6% (Bonds)", "dotted"),
-                        (0.10, "10% (S&P 500)", "dashed")
+                        (0.10, "10% (S&P 500)", "dashed"),
                     ]:
                         growth_values = growth_curve_for_dates(rate, values_clean[0], dates_clean[0], dates_clean)
-                        
+
                         # Cap growth curve if it exceeds top dataset maximum
                         if top_max_value is not None:
                             # Find where growth curve first exceeds top max
@@ -241,8 +246,8 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
                                 if len(last_valid_idx) > 0:
                                     last_valid_idx = last_valid_idx[-1]
                                     # Only plot up to the last valid point
-                                    capped_dates = dates_clean[:last_valid_idx + 1]
-                                    capped_values = growth_values[:last_valid_idx + 1]
+                                    capped_dates = dates_clean[: last_valid_idx + 1]
+                                    capped_values = growth_values[: last_valid_idx + 1]
                                 else:
                                     # All values exceed top max, don't plot this growth curve
                                     continue
@@ -254,16 +259,22 @@ def create_housing_plot(filtered_data: dict, city: str, state: str, output_dir: 
                             # No top data available, plot without capping
                             capped_dates = dates_clean
                             capped_values = growth_values
-                        
+
                         # Calculate growth factor for this curve
                         curve_growth_factor = growth_values[-1] / growth_values[0]
                         label_with_growth = f"{label} ({curve_growth_factor:.1f}x)"
-                        
+
                         # Set line properties based on style
                         linewidth = 3 if style == "dotted" else 2
-                        ax.plot(capped_dates, capped_values,
-                                label=label_with_growth, color=colors[data_type], 
-                                linewidth=linewidth, linestyle=style, alpha=0.7)
+                        ax.plot(
+                            capped_dates,
+                            capped_values,
+                            label=label_with_growth,
+                            color=colors[data_type],
+                            linewidth=linewidth,
+                            linestyle=style,
+                            alpha=0.7,
+                        )
 
             if date_range is None:
                 date_range = (dates_clean.min(), dates_clean.max())
