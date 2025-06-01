@@ -141,7 +141,7 @@ def get_company_info(
     # Save to parquet file
     os.makedirs(output_dir, exist_ok=True)
     date_str = get_latest_quarter_end().strftime("%Y-%m-%d")
-    output_file = os.path.join(output_dir, f"{file_name}-{date_str}.parquet")
+    output_file = os.path.join(output_dir, f"{file_name}_{date_str}.parquet")
 
     df.to_parquet(output_file, index=False)
     console.print(f"[green]Company info saved to: {output_file}[/green]")

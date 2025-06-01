@@ -487,7 +487,7 @@ async def fetch_table(
                 console.print(f"[yellow]Retry {attempt}/{MAX_RETRIES} for {sym}-{page} after {delay:.1f}s[/yellow]")
                 await asyncio.sleep(delay)
 
-            url = URL_TMPL.format(sym=sym, slug=current_slug, page=page, freq=freq)
+            url = URL_TMPL.format(sym=sym.replace("-", "."), slug=current_slug, page=page, freq=freq)
             console.print(f"[yellow]WEB [/yellow]{url}")
 
             async with semaphore:
@@ -559,7 +559,7 @@ async def fetch_table(
                 # Consume another token for the retry
                 await token_bucket.consume()
 
-                retry_url = URL_TMPL.format(sym=sym, slug=correct_slug, page=page, freq=freq)
+                retry_url = URL_TMPL.format(sym=sym.replace("-", "."), slug=correct_slug, page=page, freq=freq)
                 console.print(f"[yellow]RETRY[/yellow] {retry_url}")
 
                 # Retry with same persistence for redirects

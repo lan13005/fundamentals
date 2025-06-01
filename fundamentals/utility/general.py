@@ -13,7 +13,7 @@ def get_sp500_tickers() -> list[str]:
     wiki = requests.get("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies").text
     table = BeautifulSoup(wiki, "lxml").find("table", {"id": "constituents"})
     tickers = [row.find_all("td")[0].text.strip() for row in table.find_all("tr")[1:]]
-    tickers = [t.replace(".", "-") for t in tickers]  # BRK.B -> BRK-B
+    tickers = [t.replace(".", "-") for t in tickers]  # BRK.B -> BRK-B, this is done for yfinance
     return tickers
 
 
@@ -21,7 +21,7 @@ def get_nasdaq_tickers() -> list[str]:
     """Get the NASDAQ tickers from Nasdaq."""
     wiki = requests.get("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt").text
     tickers = [t.split("|")[0] for t in wiki.split("\n")[1:] if len(t) > 0]
-    tickers = [t.replace(".", "-") for t in tickers]  # BRK.B -> BRK-B
+    tickers = [t.replace(".", "-") for t in tickers]  # BRK.B -> BRK-B, this is done for yfinance
     return tickers
 
 
