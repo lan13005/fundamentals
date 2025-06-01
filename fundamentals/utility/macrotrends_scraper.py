@@ -323,118 +323,198 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     - Calculating additional annualized features
         - EPS (+derived features) uses 3yr rolling average
     """
-    # Finally, transform the dataframe to have features as columns rather than datetimes
-    if "field_name" in df.columns:
-        df = df.set_index("field_name").T
-        df.index.name = "date"
-        df = df.reset_index()
+    try:
+        # Check if input dataframe is empty
+        if df.empty:
+            console.print(f"[red]Warning: Empty input dataframe for {ticker}[/red]")
+            return pd.DataFrame()
 
-        # Convert all non-date columns to numeric
-        # Filling NaNs with 0s makes sense for this type of data
-        for col in df.columns:
-            if col == "date":
-                continue
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        # Finally, transform the dataframe to have features as columns rather than datetimes
+        if "field_name" in df.columns:
+            df = df.set_index("field_name").T
+            df.index.name = "date"
+            df = df.reset_index()
 
-        # Convert date column to datetime
-        df["date"] = pd.to_datetime(df["date"])
+            # Convert all non-date columns to numeric
+            # Filling NaNs with 0s makes sense for this type of data
+            for col in df.columns:
+                if col == "date":
+                    continue
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # 1. Set up yfinance and date range
-    yt = yf.Ticker(ticker)
-    start = df["date"].min()
-    end = df["date"].max() + pd.Timedelta(days=1)  # offset to include the last day
+            # Convert date column to datetime
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            
+            # Check if we have valid dates
+            if df["date"].isna().all():
+                console.print(f"[red]Warning: No valid dates found for {ticker}[/red]")
+                return pd.DataFrame()
+        else:
+            console.print(f"[red]Warning: No 'field_name' column found for {ticker}[/red]")
+            return pd.DataFrame()
 
-    # 2. Fetch raw price & dividends
-    prices = yt.history(start=start, end=end)[["Close"]].rename(columns={"Close": "Price"})
-    divs = yt.dividends.rename("Dividends Per Share")
+        # Check if we have any data after transformation
+        if df.empty or len(df) == 0:
+            console.print(f"[red]Warning: Empty dataframe after transformation for {ticker}[/red]")
+            return pd.DataFrame()
 
-    # 3. Resample to quarter-end
-    price_q = prices["Price"].resample("QE").last()
-    price_q.index = price_q.index.tz_localize(None)  # drop tz-info
-    price_q = price_q.loc[start:end]
+        # Try to fetch yfinance data with error handling
+        try:
+            # 1. Set up yfinance and date range
+            yt = yf.Ticker(ticker)
+            start = df["date"].min()
+            end = df["date"].max() + pd.Timedelta(days=1)  # offset to include the last day
 
-    div_q = divs.resample("QE").sum()
-    if div_q.index.tz is not None:
-        div_q.index = div_q.index.tz_localize(None)
-    div_q = div_q.loc[start:end].fillna(0)  # fill missing quarters with 0
+            # 2. Fetch raw price & dividends with timeout
+            try:
+                prices = yt.history(start=start, end=end)[["Close"]].rename(columns={"Close": "Price"})
+                divs = yt.dividends.rename("Dividends Per Share")
+            except Exception as yf_error:
+                console.print(f"[yellow]Warning: Failed to fetch yfinance data for {ticker}: {yf_error}[/yellow]")
+                console.print(f"[yellow]Proceeding without price/dividend data[/yellow]")
+                # Continue without yfinance data
+                prices = pd.DataFrame()
+                divs = pd.Series(dtype='float64', name="Dividends Per Share")
 
-    # Align all datasets, print a remark on any alignment issues like data chopped off
-    new_start = max(start, div_q.index.min(), price_q.index.min())
-    new_end = min(end, div_q.index.max(), price_q.index.max()) + pd.Timedelta(days=1)
-    price_q = price_q.loc[new_start:new_end]
-    div_q = div_q.loc[new_start:new_end]
-    df = df[(df["date"] > new_start) * (df["date"] < new_end)]
+            # Only proceed with price/dividend calculations if we have the data
+            if not prices.empty and len(divs) > 0:
+                # 3. Resample to quarter-end
+                price_q = prices["Price"].resample("QE").last()
+                price_q.index = price_q.index.tz_localize(None)  # drop tz-info
+                price_q = price_q.loc[start:end]
 
-    # # 4. Align back to your df dates
-    df = df.set_index("date").sort_index()
-    df["Price"] = price_q.reindex(df.index, method="ffill")
-    df["Dividends Per Share"] = div_q.reindex(df.index).fillna(0)  # already 0 where missing
+                div_q = divs.resample("QE").sum()
+                if div_q.index.tz is not None:
+                    div_q.index = div_q.index.tz_localize(None)
+                div_q = div_q.loc[start:end].fillna(0)  # fill missing quarters with 0
 
-    df["NWC"] = df["Total Current Assets"] - df["Total Current Liabilities"]
-    df["Net Fixed Assets"] = df["Property, Plant, And Equipment"]
-    df["Capital Employed"] = df["NWC"] + df["Net Fixed Assets"]
-    df["ROCE"] = df["Operating Income"] / df["Capital Employed"]
+                # Align all datasets, print a remark on any alignment issues like data chopped off
+                new_start = max(start, div_q.index.min(), price_q.index.min())
+                new_end = min(end, div_q.index.max(), price_q.index.max()) + pd.Timedelta(days=1)
+                console.print(f"[cyan]Debug: Calculated alignment range: {new_start} to {new_end}[/cyan]")
+                console.print(f"[cyan]Debug: Financial data date range: {df['date'].min()} to {df['date'].max()}[/cyan]")
+                console.print(f"[cyan]Debug: Financial data before filtering: {len(df)} rows[/cyan]")
+                
+                price_q = price_q.loc[new_start:new_end]
+                div_q = div_q.loc[new_start:new_end]
+                
+                # FIXED: Use flexible approach instead of restrictive filtering
+                # Keep ALL financial data and add price/dividend data where available
+                console.print(f"[yellow]Using flexible approach: keeping all financial data[/yellow]")
+                df = df.set_index("date").sort_index()
+                
+                # Add price and dividend data by reindexing (fills NaN where no price data available)
+                df["Price"] = price_q.reindex(df.index, method="ffill")
+                df["Dividends Per Share"] = div_q.reindex(df.index).fillna(0)
+                
+                # Fill NaN prices with 0 for periods without price data
+                df["Price"] = df["Price"].fillna(0)
+                console.print(f"[cyan]Debug: Final shape after flexible alignment: {df.shape}[/cyan]")
+            else:
+                # Set df index to date and add placeholder columns
+                console.print(f"[yellow]No price/dividend data available, using placeholders[/yellow]")
+                df = df.set_index("date").sort_index()
+                df["Price"] = 0.0
+                df["Dividends Per Share"] = 0.0
 
-    # Statutory tax rates changed in 2017 from 35% to 21%
-    #   This rate does not include state taxes, credits, international income, etc.
-    stat_rates = pd.Series(df.index.year.map(lambda y: 0.35 if y < 2018 else 0.21), index=df.index)
+        except Exception as yf_error:
+            console.print(f"[yellow]Warning: Error processing yfinance data for {ticker}: {yf_error}[/yellow]")
+            # Continue without yfinance data
+            df = df.set_index("date").sort_index()
+            df["Price"] = 0.0
+            df["Dividends Per Share"] = 0.0
 
-    # Growth metrics
-    df["Revenue YoY"] = df["Revenue"].pct_change(periods=4)
+        # Check if we have required columns before proceeding with calculations
+        required_cols = ["Total Current Assets", "Total Current Liabilities", "Property, Plant, And Equipment"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            console.print(f"[yellow]Warning: Missing columns for {ticker}: {missing_cols}[/yellow]")
+            console.print(f"[yellow]Available columns: {list(df.columns)[:10]}... (showing first 10)[/yellow]")
+            # Add missing columns with zeros to allow calculations to proceed
+            for col in missing_cols:
+                df[col] = 0.0
 
-    # NOTE: our data is sorted with latest date first. Need to reverse, then roll, then reverse again
-    df["Taxes LTM"] = df["Income Taxes"].rolling(window=4).sum()
-    df["PreTax LTM"] = df["Pre-Tax Income"].rolling(window=4).sum()
-    df["ETR LTM"] = (df["Taxes LTM"] / df["PreTax LTM"]).clip(0, 1).ffill().fillna(stat_rates)
-    df["NOPAT LTM"] = df["Operating Income"].rolling(window=4).sum() * (1 - df["ETR LTM"])
-    df["Capital Employed Avg"] = df["Capital Employed"].rolling(window=4).mean()  # average of 4 quarter-ends
-    df["ROIC LTM"] = df["NOPAT LTM"] / df["Capital Employed Avg"]  # annualized ROIC
+        # Safely calculate derived columns with error handling
+        try:
+            df["NWC"] = df.get("Total Current Assets", 0) - df.get("Total Current Liabilities", 0)
+            df["Net Fixed Assets"] = df.get("Property, Plant, And Equipment", 0)
+            df["Capital Employed"] = df["NWC"] + df["Net Fixed Assets"]
+            df["ROCE"] = df.get("Operating Income", 0) / df["Capital Employed"].replace(0, 1)  # Avoid division by zero
 
-    df["Total Debt"] = df["Long Term Debt"] + df["Net Current Debt"]
-    df["Debt to Equity"] = df["Total Debt"] / df["Share Holder Equity"]
-    df["Equity to Assets"] = df["Share Holder Equity"] / df["Total Assets"]
-    df["Earnings LTM"] = df["Net Income"].rolling(window=4).sum()
-    df["Avg Earnings 3y"] = df["Earnings LTM"].rolling(window=3).mean()  # backward rolling window
-    df["FCF"] = (
-        df["Cash Flow From Operating Activities"]
-        + df["Net Change In Property, Plant, And Equipment"]
-        + df["Net Change In Intangible Assets"]
-    )
-    df["FCF Margin"] = df["FCF"] / df["Revenue"]
-    df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
-    df["FCF Margin LTM"] = df["FCF"].rolling(window=4).sum() / df["Revenue"].rolling(window=4).sum()
+            # Statutory tax rates changed in 2017 from 35% to 21%
+            #   This rate does not include state taxes, credits, international income, etc.
+            stat_rates = pd.Series(df.index.year.map(lambda y: 0.35 if y < 2018 else 0.21), index=df.index)
 
-    df["Market Cap"] = df["Price"] * df["Shares Outstanding"]
-    df["EPS 3y"] = df["Avg Earnings 3y"] / df["Shares Outstanding"]
-    df["PE Ratio"] = df["Price"] / df["EPS 3y"]
-    df["BV per share"] = df["Share Holder Equity"] / df["Shares Outstanding"]
-    df["PB Ratio"] = df["Price"] / df["BV per share"]
-    df["BV to Tangible Assets"] = (df["Share Holder Equity"] - df["Goodwill And Intangible Assets"]) / df[
-        "Total Assets"
-    ]
-    df["Enterprise Value"] = df["Market Cap"] + df["Total Debt"] - df["Cash On Hand"]
-    df["EV to EBITDA"] = df["Enterprise Value"] / df["EBITDA"]
-    df["Dividend Yield LTM"] = df["Dividends Per Share"].rolling(window=4).sum()
-    df["Dividend Yield"] = df["Dividend Yield LTM"] / df["Price"]
-    df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
-    df["FCF Yield LTM"] = df["FCF LTM"] / df["Enterprise Value"]
+            # Growth metrics
+            df["Revenue YoY"] = df.get("Revenue", pd.Series(0, index=df.index)).pct_change(periods=4)
 
-    # Total return over 5 years using Compound Annual Growth Rate
-    df["TR Factor 5y"] = (df["Price"] + df["Dividends Per Share"].rolling(window=4 * 5).sum()) / df["Price"].shift(
-        4 * 5
-    )
-    df["TR CAGR 5y"] = df["TR Factor 5y"] ** (1 / 5) - 1
+            # NOTE: our data is sorted with latest date first. Need to reverse, then roll, then reverse again
+            df["Taxes LTM"] = df.get("Income Taxes", 0).rolling(window=4).sum()
+            df["PreTax LTM"] = df.get("Pre-Tax Income", 0).rolling(window=4).sum()
+            df["ETR LTM"] = (df["Taxes LTM"] / df["PreTax LTM"].replace(0, 1)).clip(0, 1).ffill().fillna(stat_rates)
+            df["NOPAT LTM"] = df.get("Operating Income", 0).rolling(window=4).sum() * (1 - df["ETR LTM"])
+            df["Capital Employed Avg"] = df["Capital Employed"].rolling(window=4).mean()  # average of 4 quarter-ends
+            df["ROIC LTM"] = df["NOPAT LTM"] / df["Capital Employed Avg"].replace(0, 1)  # annualized ROIC
 
-    # Everything at this point should be space-separated
-    #   Switch to kebab-case for column names which is easier to reference
-    df.columns = df.columns.str.replace(",", " ")
-    df.columns = df.columns.str.replace("/", " ")
-    df.columns = df.columns.str.replace(r"\s+", " ", regex=True)
-    df.columns = df.columns.str.replace(".", "-")
-    df.columns = df.columns.str.replace(" ", "-")
-    df.columns = df.columns.str.replace("-{2,}", "-", regex=True)
+            df["Total Debt"] = df.get("Long Term Debt", 0) + df.get("Net Current Debt", 0)
+            df["Debt to Equity"] = df["Total Debt"] / df.get("Share Holder Equity", 1).replace(0, 1)
+            df["Equity to Assets"] = df.get("Share Holder Equity", 0) / df.get("Total Assets", 1).replace(0, 1)
+            df["Earnings LTM"] = df.get("Net Income", 0).rolling(window=4).sum()
+            df["Avg Earnings 3y"] = df["Earnings LTM"].rolling(window=3).mean()  # backward rolling window
+            
+            cash_flow_ops = df.get("Cash Flow From Operating Activities", 0)
+            ppe_change = df.get("Net Change In Property, Plant, And Equipment", 0)
+            intangible_change = df.get("Net Change In Intangible Assets", 0)
+            df["FCF"] = cash_flow_ops + ppe_change + intangible_change
+            
+            df["FCF Margin"] = df["FCF"] / df.get("Revenue", 1).replace(0, 1)
+            df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
+            df["FCF Margin LTM"] = df["FCF"].rolling(window=4).sum() / df.get("Revenue", 1).rolling(window=4).sum().replace(0, 1)
 
-    return df
+            df["Market Cap"] = df["Price"] * df.get("Shares Outstanding", 0)
+            df["EPS 3y"] = df["Avg Earnings 3y"] / df.get("Shares Outstanding", 1).replace(0, 1)
+            df["PE Ratio"] = df["Price"] / df["EPS 3y"].replace(0, 1)
+            df["BV per share"] = df.get("Share Holder Equity", 0) / df.get("Shares Outstanding", 1).replace(0, 1)
+            df["PB Ratio"] = df["Price"] / df["BV per share"].replace(0, 1)
+            df["BV to Tangible Assets"] = (df.get("Share Holder Equity", 0) - df.get("Goodwill And Intangible Assets", 0)) / df.get("Total Assets", 1).replace(0, 1)
+            df["Enterprise Value"] = df["Market Cap"] + df["Total Debt"] - df.get("Cash On Hand", 0)
+            df["EV to EBITDA"] = df["Enterprise Value"] / df.get("EBITDA", 1).replace(0, 1)
+            df["Dividend Yield LTM"] = df["Dividends Per Share"].rolling(window=4).sum()
+            df["Dividend Yield"] = df["Dividend Yield LTM"] / df["Price"].replace(0, 1)
+            df["FCF LTM"] = df["FCF"].rolling(window=4).sum()
+            df["FCF Yield LTM"] = df["FCF LTM"] / df["Enterprise Value"].replace(0, 1)
+
+            # Total return over 5 years using Compound Annual Growth Rate
+            df["TR Factor 5y"] = (df["Price"] + df["Dividends Per Share"].rolling(window=4 * 5).sum()) / df["Price"].shift(4 * 5).replace(0, 1)
+            df["TR CAGR 5y"] = df["TR Factor 5y"] ** (1 / 5) - 1
+
+        except Exception as calc_error:
+            console.print(f"[yellow]Warning: Error calculating derived metrics for {ticker}: {calc_error}[/yellow]")
+            # Continue with basic data if calculations fail
+
+        # Everything at this point should be space-separated
+        #   Switch to kebab-case for column names which is easier to reference
+        df.columns = df.columns.str.replace(",", " ")
+        df.columns = df.columns.str.replace("/", " ")
+        df.columns = df.columns.str.replace(r"\s+", " ", regex=True)
+        df.columns = df.columns.str.replace(".", "-")
+        df.columns = df.columns.str.replace(" ", "-")
+        df.columns = df.columns.str.replace("-{2,}", "-", regex=True)
+
+        # Final check
+        if df.empty:
+            console.print(f"[red]Warning: Final dataframe is empty for {ticker}[/red]")
+            return pd.DataFrame()
+
+        console.print(f"[green]✓ Successfully processed {len(df)} rows for {ticker}[/green]")
+        return df
+
+    except Exception as e:
+        console.print(f"[red]Error in finalize_merged_dataframe for {ticker}: {e}[/red]")
+        import traceback
+        console.print(f"[red]Traceback: {traceback.format_exc()}[/red]")
+        return pd.DataFrame()
 
 
 def merged_parquet_name(sym: str, snap_date: dt.date) -> pathlib.Path:
@@ -742,8 +822,16 @@ async def scrape_many(
 
             # Process and save dataframe immediately after symbol completion
             if valid_dfs:
+                console.print(f"[cyan]Debug: Found {len(valid_dfs)} valid dataframes for {s}[/cyan]")
+                for i, df in enumerate(valid_dfs):
+                    console.print(f"[cyan]Debug: DataFrame {i} shape: {df.shape}, columns: {list(df.columns)[:5]}...[/cyan]")
+                
                 merged = pd.concat(valid_dfs, ignore_index=True)
+                console.print(f"[cyan]Debug: Merged dataframe shape: {merged.shape}[/cyan]")
+                console.print(f"[cyan]Debug: Merged columns: {list(merged.columns)[:10]}...[/cyan]")
+                
                 merged = finalize_merged_dataframe(merged, s)
+                console.print(f"[cyan]Debug: Final dataframe shape after finalization: {merged.shape}[/cyan]")
 
                 # Save immediately to prevent data loss
                 fn = merged_parquet_name(s, snap_date)
@@ -915,6 +1003,12 @@ def run_macrotrends_scraper(
     Returns:
         Merged DataFrame with all scraped data
     """
+    # Initialize tracking statistics
+    failed_symbols = []
+    empty_symbols = []
+    successful_symbols = []
+    cached_symbols = []
+    
     # Configure safety settings with conservative default
     if safety_preset or safety_kwargs:
         if safety_preset:
@@ -947,20 +1041,41 @@ def run_macrotrends_scraper(
     if not force:
         cached_data = load_cached_data(expanded_symbols, snap_date)
         symbols_to_scrape = [sym for sym in expanded_symbols if sym not in cached_data]
+        
+        # Track cached symbols
+        cached_symbols = list(cached_data.keys())
 
         if cached_data:
             console.print(f"[cyan]Found cached data for {len(cached_data)} symbol(s)[/cyan]")
 
-        if not symbols_to_scrape:
-            console.print("[green]All requested data is already cached. Use --force to re-download.[/green]")
-            if cached_data:
-                result = pd.concat(list(cached_data.values()), ignore_index=True)
-                console.print(
-                    f"[bold green]✓ Loaded {len(result)} rows from cache for {len(cached_data)} symbol(s).[/bold green]"
-                )
-                return result
-            else:
-                return pd.DataFrame()
+            if not symbols_to_scrape:
+                console.print("[green]All requested data is already cached. Use --force to re-download.[/green]")
+                if cached_data:
+                    # Check which cached symbols actually have data
+                    valid_cached = {}
+                    for sym, df in cached_data.items():
+                        if df.empty:
+                            empty_symbols.append(sym)
+                        else:
+                            valid_cached[sym] = df
+                            successful_symbols.append(sym)
+                    
+                    if valid_cached:
+                        result = pd.concat(list(valid_cached.values()), ignore_index=True)
+                        console.print(
+                            f"[bold green]✓ Loaded {len(result)} rows from cache for {len(valid_cached)} symbol(s).[/bold green]"
+                        )
+                        
+                        # Print summary statistics
+                        _print_scraping_statistics(successful_symbols, empty_symbols, failed_symbols, cached_symbols)
+                        return result
+                    else:
+                        console.print("[red]All cached data is empty.[/red]")
+                        _print_scraping_statistics(successful_symbols, empty_symbols, failed_symbols, cached_symbols)
+                        return pd.DataFrame()
+                else:
+                    _print_scraping_statistics(successful_symbols, empty_symbols, failed_symbols, cached_symbols)
+                    return pd.DataFrame()
 
     # Only scrape symbols that don't have cached data (or if force=True)
     if symbols_to_scrape:
@@ -974,6 +1089,16 @@ def run_macrotrends_scraper(
         scraped_results = asyncio.run(
             scrape_many(symbols_list, pages, snap_date, freq, force, mismatches, overrides_updated)
         )
+
+        # Track which symbols succeeded, failed, or returned empty data
+        for sym in symbols_to_scrape:
+            if sym in scraped_results:
+                if scraped_results[sym].empty:
+                    empty_symbols.append(sym)
+                else:
+                    successful_symbols.append(sym)
+            else:
+                failed_symbols.append(sym)
 
         # persist any new overrides discovered during redirect handling
         if overrides_updated != FILE_OVERRIDES:
@@ -998,6 +1123,15 @@ def run_macrotrends_scraper(
 
     # Combine cached and scraped results
     all_results = {**cached_data, **scraped_results}
+    
+    # Track cached symbols that had data
+    for sym in cached_symbols:
+        if sym in all_results and not all_results[sym].empty:
+            if sym not in successful_symbols:  # Don't double-count
+                successful_symbols.append(sym)
+        elif sym in cached_data and cached_data[sym].empty:
+            if sym not in empty_symbols:  # Don't double-count
+                empty_symbols.append(sym)
 
     # Write merged parquet files for newly scraped data and return merged dataframe
     all_dfs = []
@@ -1010,10 +1144,13 @@ def run_macrotrends_scraper(
                 console.print(f"[cyan]SAVE[/cyan] {fn.name}")
             all_dfs.append(df)
 
+    # Print comprehensive statistics
+    _print_scraping_statistics(successful_symbols, empty_symbols, failed_symbols, cached_symbols)
+
     if all_dfs:
         result = pd.concat(all_dfs, ignore_index=True)
-        total_cached = len(cached_data)
-        total_scraped = len(scraped_results)
+        total_cached = len([s for s in cached_symbols if s in successful_symbols])
+        total_scraped = len([s for s in successful_symbols if s not in cached_symbols])
         console.print(
             f"[bold green]✓ Loaded {len(result)} rows for {len(all_results)} symbol(s) "
             f"({total_cached} cached, {total_scraped} scraped) for {snap_date}.[/bold green]"
@@ -1022,6 +1159,57 @@ def run_macrotrends_scraper(
     else:
         console.print("[red]No dataframes loaded.[/red]")
         return pd.DataFrame()
+
+
+def _print_scraping_statistics(successful_symbols: List[str], empty_symbols: List[str], 
+                             failed_symbols: List[str], cached_symbols: List[str]) -> None:
+    """Print comprehensive scraping statistics to the user."""
+    console.print("\n" + "="*60)
+    console.print("[bold]📊 SCRAPING STATISTICS SUMMARY[/bold]")
+    console.print("="*60)
+    
+    total_symbols = len(successful_symbols) + len(empty_symbols) + len(failed_symbols)
+    
+    if successful_symbols:
+        console.print(f"[green]✅ Successfully loaded data:[/green] {len(successful_symbols)} symbols")
+        if len(successful_symbols) <= 10:
+            console.print(f"   {', '.join(successful_symbols)}")
+        else:
+            console.print(f"   {', '.join(successful_symbols[:10])}... (showing first 10)")
+    
+    if cached_symbols:
+        cached_successful = [s for s in cached_symbols if s in successful_symbols]
+        console.print(f"[cyan]💾 Used cached data:[/cyan] {len(cached_successful)} symbols")
+        if len(cached_successful) <= 10:
+            console.print(f"   {', '.join(cached_successful)}")
+        else:
+            console.print(f"   {', '.join(cached_successful[:10])}... (showing first 10)")
+    
+    if empty_symbols:
+        console.print(f"[yellow]⚠️  Empty dataframes (no financial data found):[/yellow] {len(empty_symbols)} symbols")
+        console.print(f"   {', '.join(empty_symbols)}")
+        console.print("   [dim]These symbols were fetched but contained no usable financial data[/dim]")
+    
+    if failed_symbols:
+        console.print(f"[red]❌ Failed to scrape:[/red] {len(failed_symbols)} symbols")
+        console.print(f"   {', '.join(failed_symbols)}")
+        console.print("   [dim]These symbols could not be fetched due to network/server errors[/dim]")
+    
+    # Success rate calculation
+    if total_symbols > 0:
+        success_rate = (len(successful_symbols) / total_symbols) * 100
+        console.print(f"\n[bold]Success Rate:[/bold] {success_rate:.1f}% ({len(successful_symbols)}/{total_symbols})")
+        
+        if empty_symbols or failed_symbols:
+            console.print("\n[yellow]💡 TROUBLESHOOTING TIPS:[/yellow]")
+            if empty_symbols:
+                console.print("• Empty dataframes: Check if the ticker symbols are correct and have available financial data")
+                console.print("• Some symbols may be new listings without sufficient historical data")
+            if failed_symbols:
+                console.print("• Failed symbols: Try running with --force flag or check network connectivity")
+                console.print("• Consider using a more conservative safety preset if encountering rate limits")
+    
+    console.print("="*60 + "\n")
 
 
 def configure_scraping_safety(
