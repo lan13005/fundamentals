@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from typing import Dict, List, Optional, Tuple
 
 import aiohttp
+import numpy as np
 import pandas as pd
 import yfinance as yf
 from aiohttp import ClientTimeout
@@ -20,6 +21,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from fundamentals.utility.general import get_latest_quarter_end, get_nasdaq_tickers, get_sp500_tickers
+from fundamentals.utility.wacc import compute_rolling_beta, get_historical_erp, get_risk_free_rate
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, message="invalid escape")
 console = Console()
@@ -312,7 +314,150 @@ def clean_dataframe_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
     return df_clean
 
 
-def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+# ───────────── WACC calculation functions ───────────── #
+
+
+def calculate_wacc_components(df: pd.DataFrame, ticker: str, verbose: bool = False) -> pd.DataFrame:
+    """
+    Calculate WACC components and add them to the existing dataframe.
+
+    Args:
+        df (pd.DataFrame): Dataframe with financial data (with datetime index)
+        ticker (str): Stock ticker symbol
+        verbose (bool): Whether to print debug information
+
+    Returns:
+        pd.DataFrame: Dataframe with WACC components added ['Rf', 'beta', 'ERP', 'R-e', 'WACC']
+    """
+    if df.empty:
+        console.print(f"[yellow]Warning: Empty dataframe for WACC calculation for {ticker}[/yellow]")
+        return df
+
+    try:
+        # Get date range from dataframe
+        start_date = df.index.min().strftime("%Y-%m-%d")
+        end_date = df.index.max().strftime("%Y-%m-%d")
+
+        if verbose:
+            console.print(f"[cyan]Calculating WACC components for {ticker} from {start_date} to {end_date}[/cyan]")
+
+        # Get risk-free rate
+        rf_quarterly = get_risk_free_rate(start_date, end_date, verbose)
+
+        # Compute rolling beta
+        beta_quarterly = compute_rolling_beta(ticker, rf_quarterly, start_date, end_date, verbose=verbose)
+
+        # Get historical ERP
+        erp_quarterly = get_historical_erp(start_date, end_date, verbose)
+
+        # Add WACC components to dataframe by aligning with existing index
+        df_wacc = df.copy()
+
+        # Align data with existing dataframe index
+        df_wacc["Risk-Free-Rate"] = rf_quarterly.reindex(df_wacc.index, method="ffill")
+        df_wacc["beta"] = beta_quarterly.reindex(df_wacc.index, method="ffill")
+        df_wacc["Equity-Risk-Premium"] = erp_quarterly.reindex(df_wacc.index, method="ffill")
+
+        # Fill any remaining NaN values with reasonable defaults
+        df_wacc["Risk-Free-Rate"] = df_wacc["Risk-Free-Rate"].fillna(0.025)  # 2.5% default risk-free rate
+        df_wacc["beta"] = df_wacc["beta"].fillna(1.0)  # Default beta of 1.0
+        df_wacc["Equity-Risk-Premium"] = df_wacc["Equity-Risk-Premium"].fillna(0.055)  # 5.5% default ERP
+
+        # Calculate cost of equity
+        df_wacc["Cost-of-Equity"] = df_wacc["Risk-Free-Rate"] + df_wacc["beta"] * df_wacc["Equity-Risk-Premium"]
+
+        # Map column names from kebab-case to the expected format for WACC calculations
+        # Need to handle both Total-Debt components and Interest-Expense
+        total_debt = df_wacc.get("Long-Term-Debt", 0) + df_wacc.get("Net-Current-Debt", 0)
+        market_cap = df_wacc.get("Market-Cap", 0)
+
+        # Calculate interest expense from available columns
+        # Look for Interest Expense or similar columns in original names before kebab conversion
+        interest_expense = 0
+        for col in df_wacc.columns:
+            if "interest" in col.lower() and "expense" in col.lower():
+                interest_expense = df_wacc[col]
+                break
+
+        # If no interest expense found, use 0 (companies with no debt)
+        if isinstance(interest_expense, int | float) and interest_expense == 0:
+            interest_expense = pd.Series(0, index=df_wacc.index)
+
+        # Calculate cost of debt components
+        debt_avg = (total_debt.shift(1) + total_debt) / 2
+
+        # Calculate R_d_pre_tax, but fill with 0 if no debt or interest expense
+        r_d_pre_tax = np.where(
+            (debt_avg > 0) & (interest_expense.notna()) & (interest_expense > 0),
+            interest_expense / debt_avg,
+            0.0,  # Zero cost if no debt or no interest expense
+        )
+
+        # Calculate tax rate from Pre-Tax-Income and Income-Taxes
+        pre_tax_income = df_wacc.get("Pre-Tax-Income", 0)
+        income_taxes = df_wacc.get("Income-Taxes", 0)
+
+        tax_rate = np.where(
+            (pre_tax_income != 0) & (pre_tax_income.notna()) & (income_taxes.notna()),
+            income_taxes / pre_tax_income,
+            0.21,  # Use standard corporate tax rate as fallback
+        )
+
+        # Ensure tax rate is between 0 and 1
+        tax_rate = np.clip(tax_rate, 0, 1)
+
+        # After-tax cost of debt (will be 0 if r_d_pre_tax is 0)
+        r_d = r_d_pre_tax * (1 - tax_rate)
+
+        # Add cost of debt to dataframe
+        df_wacc["Cost-of-Debt"] = r_d
+
+        # Capital structure weights
+        market_value_equity = market_cap.fillna(0.0)
+        market_value_debt = total_debt.fillna(0.0)
+        total_capital = market_value_equity + market_value_debt
+
+        # Calculate weights with safe division
+        total_capital_safe = total_capital.replace(0, np.nan)
+
+        weight_equity = np.where(
+            total_capital > 0, market_value_equity / total_capital_safe, 1.0  # 100% equity if no total capital data
+        )
+
+        weight_debt = np.where(
+            total_capital > 0, market_value_debt / total_capital_safe, 0.0  # 0% debt if no total capital data
+        )
+
+        # Calculate WACC
+        wacc = np.where(
+            df_wacc["Cost-of-Equity"].notna() & (total_capital > 0),
+            weight_equity * df_wacc["Cost-of-Equity"] + weight_debt * df_wacc["Cost-of-Debt"],
+            np.nan,
+        )
+
+        df_wacc["WACC"] = wacc
+
+        if verbose:
+            non_null_wacc = pd.Series(wacc).dropna()
+            if len(non_null_wacc) > 0:
+                console.print(f"[green]✓ Calculated WACC for {len(non_null_wacc)} quarters for {ticker}[/green]")
+                console.print(
+                    f"[cyan]Average WACC: {non_null_wacc.mean():.4f} ({non_null_wacc.mean()*100:.2f}%)[/cyan]"
+                )
+            else:
+                console.print(f"[yellow]Warning: No valid WACC calculations for {ticker}[/yellow]")
+
+        return df_wacc
+
+    except Exception as e:
+        console.print(f"[red]Error calculating WACC components for {ticker}: {e}[/red]")
+        import traceback
+
+        console.print(f"[red]Traceback: {traceback.format_exc()}[/red]")
+        return df
+
+
+def finalize_merged_dataframe(df: pd.DataFrame, ticker: str, include_wacc: bool = True) -> pd.DataFrame:
     """
     Finalize the merged dataframe by:
     - Transposing the dataframe to have features as columns rather than datetimes
@@ -322,6 +467,15 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     - Aligning all datasets
     - Calculating additional annualized features
         - EPS (+derived features) uses 3yr rolling average
+    - Optionally calculating WACC components (Rf, beta, ERP, R_e, WACC)
+
+    Args:
+        df (pd.DataFrame): Input dataframe with financial data
+        ticker (str): Stock ticker symbol
+        include_wacc (bool): Whether to calculate and include WACC components
+
+    Returns:
+        pd.DataFrame: Finalized dataframe with all calculated metrics
     """
     try:
         # Check if input dataframe is empty
@@ -509,6 +663,27 @@ def finalize_merged_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         df.columns = df.columns.str.replace(".", "-")
         df.columns = df.columns.str.replace(" ", "-")
         df.columns = df.columns.str.replace("-{2,}", "-", regex=True)
+
+        # Calculate WACC components and add to dataframe
+        if include_wacc:
+            try:
+                console.print(f"[cyan]Adding WACC components to {ticker}...[/cyan]")
+                df = calculate_wacc_components(df, ticker, verbose=False)
+                console.print(f"[green]✓ Successfully added WACC components to {ticker}[/green]")
+            except Exception as wacc_error:
+                console.print(f"[yellow]Warning: Error calculating WACC components for {ticker}: {wacc_error}[/yellow]")
+                # Continue without WACC data - add placeholder columns with NaN
+                for wacc_col in [
+                    "Risk-Free-Rate",
+                    "beta",
+                    "Equity-Risk-Premium",
+                    "Cost-of-Equity",
+                    "Cost-of-Debt",
+                    "WACC",
+                ]:
+                    df[wacc_col] = np.nan
+        else:
+            console.print(f"[cyan]Skipping WACC calculation for {ticker}[/cyan]")
 
         # Final check
         if df.empty:
@@ -711,6 +886,7 @@ async def scrape_many(
     force: bool,
     mismatches: list[Tuple[str, str, str]],  # Updated type annotation
     overrides: dict[str, str],
+    include_wacc: bool = True,  # New parameter for WACC calculation
 ) -> dict[str, pd.DataFrame]:
     """
     Fetch all pages for all symbols and return a dict of symbol: merged dataframe.
@@ -841,7 +1017,7 @@ async def scrape_many(
                 console.print(f"[cyan]Debug: Merged dataframe shape: {merged.shape}[/cyan]")
                 console.print(f"[cyan]Debug: Merged columns: {list(merged.columns)[:10]}...[/cyan]")
 
-                merged = finalize_merged_dataframe(merged, s)
+                merged = finalize_merged_dataframe(merged, s, include_wacc=include_wacc)
                 console.print(f"[cyan]Debug: Final dataframe shape after finalization: {merged.shape}[/cyan]")
 
                 # Save immediately to prevent data loss
@@ -993,6 +1169,7 @@ def run_macrotrends_scraper(
     force: bool = False,
     date: Optional[str] = None,
     safety_preset: Optional[str] = "conservative",  # Default to conservative
+    include_wacc: bool = True,  # New parameter to enable/disable WACC calculations
     **safety_kwargs,
 ) -> pd.DataFrame:
     """
@@ -1009,10 +1186,11 @@ def run_macrotrends_scraper(
         force: Force re-download even if data exists
         date: Specific date in YYYY-MM-DD format, defaults to latest quarter
         safety_preset: One of "conservative" (default), "balanced", "aggressive", "maximum"
+        include_wacc: Whether to calculate and include WACC components (Rf, beta, ERP, R_e, WACC)
         **safety_kwargs: Direct safety parameters (max_concurrent, request_delay, etc.)
 
     Returns:
-        Merged DataFrame with all scraped data
+        Merged DataFrame with all scraped data including WACC components if enabled
     """
     # Initialize tracking statistics
     failed_symbols = []
@@ -1072,7 +1250,7 @@ def run_macrotrends_scraper(
                             successful_symbols.append(sym)
 
                     if valid_cached:
-                        result = pd.concat(list(valid_cached.values()), ignore_index=True)
+                        result = pd.concat(list(valid_cached.values()), ignore_index=False, sort=True)
                         console.print(
                             f"[bold green]✓ Loaded {len(result)} rows from cache for {len(valid_cached)} symbol(s).[/bold green]"
                         )
@@ -1098,7 +1276,9 @@ def run_macrotrends_scraper(
 
         # Fetch all dataframes for symbols that need scraping
         scraped_results = asyncio.run(
-            scrape_many(symbols_list, pages, snap_date, freq, force, mismatches, overrides_updated)
+            scrape_many(
+                symbols_list, pages, snap_date, freq, force, mismatches, overrides_updated, include_wacc=include_wacc
+            )
         )
 
         # Track which symbols succeeded, failed, or returned empty data
@@ -1159,7 +1339,7 @@ def run_macrotrends_scraper(
     _print_scraping_statistics(successful_symbols, empty_symbols, failed_symbols, cached_symbols)
 
     if all_dfs:
-        result = pd.concat(all_dfs, ignore_index=True)
+        result = pd.concat(all_dfs, ignore_index=False, sort=True)
         total_cached = len([s for s in cached_symbols if s in successful_symbols])
         total_scraped = len([s for s in successful_symbols if s not in cached_symbols])
         console.print(
