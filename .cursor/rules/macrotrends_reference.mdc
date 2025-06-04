@@ -1,9 +1,8 @@
 ---
-description:-Reference-for-dataframe-structure-from-macrotrends_scraper.py
+description: -Reference-for-dataframe-structure-from-macrotrends_scraper.py
 globs:
-alwaysApply:-false
+alwaysApply: false
 ---
-
 Each-parquet-file-output-from [macrotrends_scraper.py](mdc:fundamentals/utility/macrotrends_scraper.py) is a snapshot of a company's financial data up to the most recent financial quarter.
 
 The parquet file can be loaded as a pandas dataframe:
@@ -116,4 +115,10 @@ FCF-Margin: [float64]
 FCF-Margin-LTM: [float64]
 TR-Factor-5y: [float64]
 TR-CAGR-5y: [float64]
+Risk-Free-Rate: [float64]
+beta: [float64]
+Equity-Risk-Premium: [float64]
+Cost-of-Equity: [float64]
+Cost-of-Debt: [float64]
+WACC: [float64]
 ```

@@ -73,20 +73,20 @@ class BaseDCFModel(ABC):
         return np.eye(n_params)
 
     @abstractmethod
-    def calculate_dcf(self, df: pd.DataFrame, **params) -> Tuple[float, float]:
+    def calculate_dcf(self, df: pd.DataFrame, **params) -> Tuple[float, float, float]:
         """
         Calculate DCF value and implied stock price for given parameters.
 
         Parameters:
         -----------
         df : pd.DataFrame
-            Financial data with required columns
+            Financial data with required columns including 'WACC'
         **params : keyword arguments
-            Model parameters (discount_rate, growth_rate, etc.)
+            Model parameters (discount_rate_scale, growth_rate, etc.)
 
         Returns:
         --------
-        tuple : (dcf_value, stock_price)
+        tuple : (pv_fcf_fraction, dcf_value, stock_price)
         """
         pass
 
@@ -209,13 +209,15 @@ class BaseDCFModel(ABC):
     ) -> Dict[str, np.ndarray]:
         """
         Apply parameter constraints using rejection sampling.
-        Default implementation ensures terminal_growth < discount_rate.
+        Default implementation ensures terminal_growth < discount_rate_scale (assuming WACC > 0).
         Override in subclasses for additional constraints.
         """
-        if "terminal_growth" not in samples or "discount_rate" not in samples:
+        if "terminal_growth" not in samples or "discount_rate_scale" not in samples:
             return samples
 
-        valid_mask = samples["terminal_growth"] < samples["discount_rate"]
+        # For safety, ensure terminal growth is less than discount_rate_scale
+        # This is a conservative constraint assuming WACC > 0
+        valid_mask = samples["terminal_growth"] < samples["discount_rate_scale"]
         while not np.all(valid_mask):
             # Resample only invalid entries
             n_invalid = np.sum(~valid_mask)
@@ -229,7 +231,7 @@ class BaseDCFModel(ABC):
                 new_values = distribution.ppf(U_new[:, i])
                 samples[param_name][idxs] = new_values
 
-            valid_mask = samples["terminal_growth"] < samples["discount_rate"]
+            valid_mask = samples["terminal_growth"] < samples["discount_rate_scale"]
 
         return samples
 
@@ -494,7 +496,7 @@ class StandardDCFModel(BaseDCFModel):
         -----------
         distributions : dict
             Dictionary mapping parameter names to scipy.stats distributions.
-            Required keys: ['discount_rate', 'growth_rate', 'terminal_growth', 'time_horizon']
+            Required keys: ['discount_rate_scale', 'growth_rate', 'terminal_growth', 'time_horizon']
         correlation_matrix : np.ndarray, optional
             Correlation matrix for parameters. If None, uses identity matrix (independent sampling).
 
@@ -503,7 +505,7 @@ class StandardDCFModel(BaseDCFModel):
         from scipy.stats import uniform, norm
 
         distributions = {
-            'discount_rate': uniform(loc=0.05, scale=0.15),
+            'discount_rate_scale': uniform(loc=0.05, scale=0.15),
             'growth_rate': norm(loc=0.05, scale=0.10),
             'terminal_growth': uniform(loc=0.01, scale=0.04),
             'time_horizon': uniform(loc=5, scale=5)
@@ -518,7 +520,7 @@ class StandardDCFModel(BaseDCFModel):
 
         model.configure_priors(distributions, correlation)
         """
-        required_params = ["discount_rate", "growth_rate", "terminal_growth", "time_horizon"]
+        required_params = ["discount_rate_scale", "growth_rate", "terminal_growth", "time_horizon"]
         missing_params = [p for p in required_params if p not in distributions]
         if missing_params:
             raise ValueError(f"Missing required parameters: {missing_params}")
@@ -537,21 +539,22 @@ class StandardDCFModel(BaseDCFModel):
     def calculate_dcf(
         self,
         df: pd.DataFrame,
-        discount_rate: float,
+        discount_rate_scale: float = 1.0,
         growth_rate: Optional[float] = None,
         terminal_growth: float = 0.025,
         time_horizon: float = 10,
         forecast_horizon: Optional[int] = None,
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, float]:
         """
-        Calculate DCF value using standard methodology.
+        Calculate DCF value using standard methodology with WACC from dataframe.
 
         Parameters:
         -----------
         df : pd.DataFrame
-            DataFrame with 'FCF-LTM' and 'Shares-Outstanding' columns
-        discount_rate : float
-            Discount rate (as decimal, e.g., 0.10 for 10%)
+            DataFrame with 'FCF-LTM', 'Shares-Outstanding', and 'WACC' columns
+        discount_rate_scale : float
+            Scaling factor applied to WACC to get discount rate (default=1.0)
+            discount_rate = WACC * discount_rate_scale
         growth_rate : float, optional
             If provided, use this growth rate instead of calculating from historical FCF
         terminal_growth : float
@@ -563,7 +566,7 @@ class StandardDCFModel(BaseDCFModel):
 
         Returns:
         --------
-        tuple : (dcf_value, stock_price)
+        tuple : (pv_fcf_fraction, dcf_value, stock_price)
         """
         if forecast_horizon is None:
             forecast_horizon = int(time_horizon)
@@ -572,6 +575,10 @@ class StandardDCFModel(BaseDCFModel):
         annual_fcf = df["FCF-LTM"]
         shares_outstanding = df["Shares-Outstanding"].iloc[-1]
         last_fcf = annual_fcf.iloc[-1]  # Most recent year's FCF
+        
+        # Get WACC and apply scaling factor
+        wacc = df["WACC"].iloc[-1]  # Use most recent WACC
+        discount_rate = wacc * discount_rate_scale
 
         # Determine CAGR (g)
         if growth_rate is not None:
@@ -610,8 +617,8 @@ class StandardDCFModel(BaseDCFModel):
         table.add_column("Value", style="white")
 
         # Format parameters nicely
-        if "discount_rate" in params:
-            table.add_row("Discount Rate (r)", f"{params['discount_rate']:.2%}")
+        if "discount_rate_scale" in params:
+            table.add_row("WACC Scale Factor", f"{params['discount_rate_scale']:.2f}x")
         if "terminal_growth" in params:
             table.add_row("Perpetual Growth (g∞)", f"{params['terminal_growth']:.2%}")
         if "forecast_horizon" in params:
@@ -620,6 +627,10 @@ class StandardDCFModel(BaseDCFModel):
             table.add_row("Historical/Used CAGR (g)", f"{params['growth_rate']:.2%}")
 
         # Add financial results if provided
+        if "wacc" in params:
+            table.add_row("Base WACC", f"{params['wacc']:.2%}")
+        if "discount_rate" in params:
+            table.add_row("Effective Discount Rate", f"{params['discount_rate']:.2%}")
         for key in ["last_fcf", "pv_fcf", "pv_terminal", "dcf_value", "shares_outstanding", "stock_price"]:
             if key in params:
                 value = params[key]
