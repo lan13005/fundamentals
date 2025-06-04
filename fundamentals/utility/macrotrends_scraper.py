@@ -378,10 +378,10 @@ def calculate_wacc_components(df: pd.DataFrame, ticker: str, verbose: bool = Fal
         #   This non-operating expense includes interest expense but other things like one-time expenses
         operating_income = df_wacc.get("Operating-Income", 0)
         pre_tax_income = df_wacc.get("Pre-Tax-Income", 0)
-        
+
         # Calculate interest expense: EBIT - Pre-Tax Income
         interest_expense = operating_income - pre_tax_income
-        
+
         # For companies with no debt, interest expense might be negative (other income)
         # We want to use 0 for cost of debt calculation in those cases
         interest_expense = np.maximum(interest_expense, 0)
@@ -398,7 +398,7 @@ def calculate_wacc_components(df: pd.DataFrame, ticker: str, verbose: bool = Fal
 
         # Calculate tax rate from Pre-Tax-Income and Income-Taxes
         income_taxes = df_wacc.get("Income-Taxes", 0)
-        
+
         tax_rate = np.where(
             (pre_tax_income != 0) & (pre_tax_income.notna()) & (income_taxes.notna()),
             income_taxes / pre_tax_income,

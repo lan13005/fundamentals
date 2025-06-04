@@ -575,7 +575,7 @@ class StandardDCFModel(BaseDCFModel):
         annual_fcf = df["FCF-LTM"]
         shares_outstanding = df["Shares-Outstanding"].iloc[-1]
         last_fcf = annual_fcf.iloc[-1]  # Most recent year's FCF
-        
+
         # Get WACC and apply scaling factor
         wacc = df["WACC"].iloc[-1]  # Use most recent WACC
         discount_rate = wacc * discount_rate_scale
