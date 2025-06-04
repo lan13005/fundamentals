@@ -372,16 +372,19 @@ def calculate_wacc_components(df: pd.DataFrame, ticker: str, verbose: bool = Fal
         market_cap = df_wacc.get("Market-Cap", 0)
 
         # Calculate interest expense from available columns
-        # Look for Interest Expense or similar columns in original names before kebab conversion
-        interest_expense = 0
-        for col in df_wacc.columns:
-            if "interest" in col.lower() and "expense" in col.lower():
-                interest_expense = df_wacc[col]
-                break
-
-        # If no interest expense found, use 0 (companies with no debt)
-        if isinstance(interest_expense, int | float) and interest_expense == 0:
-            interest_expense = pd.Series(0, index=df_wacc.index)
+        # Interest Expense = Operating Income (EBIT) - Pre-Tax Income
+        # EBIT = Revenue - COGS - SG&A - Capex - ...
+        # Pre-Tax-Income = EBIT + Total non operating expense
+        #   This non-operating expense includes interest expense but other things like one-time expenses
+        operating_income = df_wacc.get("Operating-Income", 0)
+        pre_tax_income = df_wacc.get("Pre-Tax-Income", 0)
+        
+        # Calculate interest expense: EBIT - Pre-Tax Income
+        interest_expense = operating_income - pre_tax_income
+        
+        # For companies with no debt, interest expense might be negative (other income)
+        # We want to use 0 for cost of debt calculation in those cases
+        interest_expense = np.maximum(interest_expense, 0)
 
         # Calculate cost of debt components
         debt_avg = (total_debt.shift(1) + total_debt) / 2
@@ -394,9 +397,8 @@ def calculate_wacc_components(df: pd.DataFrame, ticker: str, verbose: bool = Fal
         )
 
         # Calculate tax rate from Pre-Tax-Income and Income-Taxes
-        pre_tax_income = df_wacc.get("Pre-Tax-Income", 0)
         income_taxes = df_wacc.get("Income-Taxes", 0)
-
+        
         tax_rate = np.where(
             (pre_tax_income != 0) & (pre_tax_income.notna()) & (income_taxes.notna()),
             income_taxes / pre_tax_income,
