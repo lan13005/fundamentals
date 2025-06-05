@@ -92,7 +92,7 @@ class FinancialPipelineTestSuite:
         try:
             print("   Testing CLI command execution...")
             result = subprocess.run(
-                ["python", "fund_cli.py", "macrotrends", "--symbols", self.test_symbols[0], "--freq", "Q"],
+                ["fund", "macrotrends", "--symbols", self.test_symbols[0], "--freq", "Q"],
                 capture_output=True,
                 text=True,
                 timeout=60,

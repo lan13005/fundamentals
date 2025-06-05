@@ -29,6 +29,7 @@ dependencies = [
     "scipy>=1.15.3",
     "mplhep>=0.3.59",
     "corner>=2.2.3",
+    "seaborn>=0.13.2",
 ]
 
 [tool.black]

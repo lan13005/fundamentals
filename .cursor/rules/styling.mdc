@@ -1,5 +1,5 @@
 ---
-description:
+description: Unified styling guidelines for rich and matplotlib scripts
 globs:
 alwaysApply: false
 ---
