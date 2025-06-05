@@ -18,6 +18,7 @@ from rich import box
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
+from scipy import stats
 from scipy.stats import gaussian_kde, norm
 
 console = Console()
@@ -34,22 +35,42 @@ class BaseDCFModel(ABC):
     - Uncertainty quantification
     """
 
-    def __init__(self):
-        """Initialize the DCF model."""
-        self.distributions = self._define_prior_distributions()
-        self.parameter_names = list(self.distributions.keys())
+    def __init__(self, df: pd.DataFrame):
+        """
+        Initialize the DCF model with financial data.
+        
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            Financial data to be analyzed, must contain required columns
+        """
+        self.df = df
+        self._original_df = df.copy()  # Store original for set_center method
+        self.distributions = {}
+        self.parameter_names = []
         self._correlation_matrix = None
 
-    @abstractmethod
-    def _define_prior_distributions(self) -> Dict[str, Any]:
+    def set_center(self, center_idx: int) -> None:
         """
-        Define prior distributions for model parameters.
-
-        Returns:
-        --------
-        dict : Dictionary mapping parameter names to scipy.stats distributions
+        Set the center date for sliding window analysis.
+        
+        This method subsets the data up to the center date and reconfigures
+        priors that depend on historical data (like empirical growth rates).
+        
+        Parameters:
+        -----------
+        center_idx : int
+            Index of the center date (data will be subset to [:center_idx+1])
         """
-        pass
+        if center_idx >= len(self._original_df):
+            raise ValueError(f"Center index {center_idx} exceeds original data length {len(self._original_df)}")
+        
+        # Subset data up to center date
+        self.df = self._original_df.iloc[:center_idx + 1].copy()
+        
+        # Reconfigure priors with new data subset if we have original distributions stored
+        if hasattr(self, '_original_distributions') and hasattr(self, '_original_correlation_matrix'):
+            self.configure_priors(self._original_distributions, self._original_correlation_matrix)
 
     def _get_correlation_matrix(self) -> np.ndarray:
         """
@@ -75,11 +96,19 @@ class BaseDCFModel(ABC):
         -------
         ValueError : If distributions are not configured or correlation matrix is invalid
         """
-        if not hasattr(self, "distributions") or not self.distributions:
+        if not hasattr(self, "distributions"):
             raise ValueError("Prior distributions not configured. Call configure_priors() first.")
         
         if not self.parameter_names:
-            raise ValueError("No parameters defined. Ensure distributions are properly set.")
+            raise ValueError("No parameters defined. Call configure_priors() first.")
+        
+                # Check if we have distributions for all parameters
+        if not self.distributions:
+            raise ValueError("No distributions configured. Call configure_priors() first.")
+        
+        missing_distributions = [p for p in self.parameter_names if p not in self.distributions]
+        if missing_distributions:
+            raise ValueError(f"Missing distributions for parameters: {missing_distributions}")
         
         # Check correlation matrix if provided
         if self._correlation_matrix is not None:
@@ -98,14 +127,28 @@ class BaseDCFModel(ABC):
                 console.print("[yellow]Warning: Correlation matrix may not be positive semidefinite[/yellow]")
 
     @abstractmethod
-    def calculate_dcf(self, df: pd.DataFrame, **params) -> Tuple[float, float, float]:
+    def configure_priors(self, distributions: Dict[str, Any], correlation_matrix: Optional[np.ndarray] = None, **kwargs) -> None:
+        """
+        Configure prior distributions and correlation matrix for the model.
+
+        Parameters:
+        -----------
+        distributions : dict
+            Dictionary mapping parameter names to scipy.stats distributions
+        correlation_matrix : np.ndarray, optional
+            Correlation matrix for parameters. If None, uses identity matrix (independent sampling)
+        **kwargs : additional arguments
+            Additional arguments for subclass-specific configuration
+        """
+        pass
+
+    @abstractmethod
+    def calculate_dcf(self, **params) -> Tuple[float, float, float]:
         """
         Calculate DCF value and implied stock price for given parameters.
 
         Parameters:
         -----------
-        df : pd.DataFrame
-            Financial data with required columns including 'WACC'
         **params : keyword arguments
             Model parameters (discount_rate_scale, growth_rate, etc.)
 
@@ -115,12 +158,26 @@ class BaseDCFModel(ABC):
         """
         pass
 
+    @abstractmethod
+    def create_summary_table(self, **params) -> Table:
+        """
+        Create Rich table summarizing model parameters and results.
+
+        Parameters:
+        -----------
+        **params : keyword arguments
+            Parameters and results to display in the table
+
+        Returns:
+        --------
+        Table : Rich table object
+        """
+        pass
+
     def simulate(
         self,
-        df: pd.DataFrame,
         n_samples: int = 1000,
         random_state: int = 42,
-        correlation_matrix: Optional[np.ndarray] = None,
         show_progress: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
         """
@@ -128,14 +185,10 @@ class BaseDCFModel(ABC):
 
         Parameters:
         -----------
-        df : pd.DataFrame
-            Financial data
         n_samples : int
             Number of samples to generate
         random_state : int
             Random seed for reproducibility
-        correlation_matrix : np.ndarray, optional
-            Correlation matrix for parameters. If None, uses _get_correlation_matrix()
         show_progress : bool
             Whether to show progress bars (default=True)
 
@@ -163,9 +216,9 @@ class BaseDCFModel(ABC):
                 TimeRemainingColumn(),
                 console=console,
             ) as progress:
-                results = self._run_simulation(df, n_samples, random_state, correlation_matrix, progress)
+                results = self._run_simulation(n_samples, random_state, progress)
         else:
-            results = self._run_simulation(df, n_samples, random_state, correlation_matrix, None)
+            results = self._run_simulation(n_samples, random_state, None)
 
         pv_fcf_fractions, dcf_values, stock_prices, parameter_samples = results
 
@@ -181,20 +234,15 @@ class BaseDCFModel(ABC):
 
     def _run_simulation(
         self,
-        df: pd.DataFrame,
         n_samples: int,
         random_state: int,
-        correlation_matrix: Optional[np.ndarray],
         progress: Optional[Progress],
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
         """Internal method to run the actual simulation logic."""
         rng = np.random.default_rng(random_state)
 
         # Get correlation matrix
-        if correlation_matrix is None:
-            corr = self._get_correlation_matrix()
-        else:
-            corr = correlation_matrix
+        corr = self._get_correlation_matrix()
 
         n_params = len(self.parameter_names)
 
@@ -237,7 +285,7 @@ class BaseDCFModel(ABC):
             params = {name: samples[name][i] for name in self.parameter_names}
 
             # Calculate DCF for this parameter set
-            pv_fcf_fraction, dcf_val, stock_price = self.calculate_dcf(df, **params)
+            pv_fcf_fraction, dcf_val, stock_price = self.calculate_dcf(**params)
             pv_fcf_fractions[i] = pv_fcf_fraction
             dcf_values[i] = dcf_val
             stock_prices[i] = stock_price
@@ -257,12 +305,10 @@ class BaseDCFModel(ABC):
 
     def sliding_dcf_analysis(
         self,
-        df: pd.DataFrame,
         cagr_horizon: float,
         forecast_horizon: int,
         n_samples: int = 1000,
         random_state: int = 42,
-        correlation_matrix: Optional[np.ndarray] = None,
         output_file: Optional[str] = None,
     ) -> pd.DataFrame:
         """
@@ -276,9 +322,6 @@ class BaseDCFModel(ABC):
 
         Parameters:
         -----------
-        df : pd.DataFrame
-            DataFrame with time-indexed financial data including 'FCF-LTM', 'Shares-Outstanding', 'WACC'
-            Must have a datetime index representing quarterly financial data
         cagr_horizon : float
             Number of years to look back for CAGR calculation
         forecast_horizon : int
@@ -287,8 +330,6 @@ class BaseDCFModel(ABC):
             Number of Monte Carlo samples to generate per center date (default=1000)
         random_state : int
             Random seed for reproducibility (default=42)
-        correlation_matrix : np.ndarray, optional
-            Correlation matrix for parameters. If None, uses configured correlation matrix
         output_file : str, optional
             If provided, save results to CSV file
 
@@ -310,7 +351,7 @@ class BaseDCFModel(ABC):
         console.print(f"Samples per center date: {n_samples:,}")
         
         # Ensure df has datetime index
-        if not isinstance(df.index, pd.DatetimeIndex):
+        if not isinstance(self.df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame must have datetime index for sliding analysis")
         
         results = []
@@ -318,12 +359,12 @@ class BaseDCFModel(ABC):
         
         # Find valid center dates (must have enough historical data)
         valid_start_idx = quarters_needed
-        valid_end_idx = len(df)
+        valid_end_idx = len(self.df)
         
         total_center_dates = valid_end_idx - valid_start_idx
         total_samples = total_center_dates * n_samples
         
-        console.print(f"Valid center date range: {df.index[valid_start_idx]} to {df.index[valid_end_idx-1]}")
+        console.print(f"Valid center date range: {self.df.index[valid_start_idx]} to {self.df.index[valid_end_idx-1]}")
         console.print(f"Total center dates: {total_center_dates}")
         console.print(f"Total samples to generate: {total_samples:,}")
         
@@ -340,20 +381,17 @@ class BaseDCFModel(ABC):
             task = progress.add_task("Running sliding Monte Carlo analysis...", total=total_center_dates)
             
             for center_idx in range(valid_start_idx, valid_end_idx):
-                center_date = df.index[center_idx]
-                
-                # Create subset dataframe up to center date
-                # This ensures we only use historical data up to the center point
-                df_subset = df.iloc[:center_idx + 1].copy()
+                center_date = self.df.index[center_idx]
                 
                 try:
+                    # Set center date for sliding window analysis
+                    self.set_center(center_idx)
+                    
                     # Run Monte Carlo simulation for this center date
                     # Use different random seed per center date for proper randomization
                     pv_fcf_fractions, dcf_values, stock_prices, parameter_samples = self.simulate(
-                        df_subset,
                         n_samples=n_samples,
                         random_state=random_state + center_idx,
-                        correlation_matrix=correlation_matrix,
                         show_progress=False  # Disable nested progress to avoid conflicts
                     )
                     
@@ -365,7 +403,7 @@ class BaseDCFModel(ABC):
                             'stock_price': stock_prices[sample_idx],
                             'dcf_value': dcf_values[sample_idx],
                             'pv_fcf_fraction': pv_fcf_fractions[sample_idx],
-                            'quarters_available': len(df_subset),
+                            'quarters_available': len(self.df),
                         }
                         
                         # Add all parameter samples
@@ -419,6 +457,48 @@ class BaseDCFModel(ABC):
         
         return results_df
 
+    def _create_constraint_enforcer(self, constraint_func, constraint_name: str):
+        """
+        Create a constraint validation function for rejection sampling.
+        
+        Parameters:
+        -----------
+        constraint_func : callable
+            Function that takes samples dict and returns boolean mask of valid samples
+        constraint_name : str
+            Name of constraint for logging
+            
+        Returns:
+        --------
+        callable : Constraint validation function
+        """
+        def enforcer(samples, rng, L):
+            valid_mask = constraint_func(samples)
+            iteration = 0
+            max_iterations = 100
+            
+            while not np.all(valid_mask) and iteration < max_iterations:
+                # Resample only invalid entries
+                n_invalid = np.sum(~valid_mask)
+                Z_new = rng.standard_normal(size=(n_invalid, len(self.parameter_names))) @ L.T
+                U_new = norm.cdf(Z_new)
+
+                # Replace invalid entries
+                idxs = np.where(~valid_mask)[0]
+                for i, param_name in enumerate(self.parameter_names):
+                    distribution = self.distributions[param_name]
+                    new_values = distribution.ppf(U_new[:, i])
+                    samples[param_name][idxs] = new_values
+
+                valid_mask = constraint_func(samples)
+                iteration += 1
+                
+            if iteration >= max_iterations:
+                console.print(f"[yellow]Warning: {constraint_name} constraint couldn't be satisfied after {max_iterations} iterations[/yellow]")
+                
+            return samples
+        return enforcer
+
     def _apply_parameter_constraints(
         self, samples: Dict[str, np.ndarray], rng: np.random.Generator, L: np.ndarray
     ) -> Dict[str, np.ndarray]:
@@ -430,44 +510,17 @@ class BaseDCFModel(ABC):
         if "terminal_growth" not in samples or "discount_rate_scale" not in samples:
             return samples
 
-        # For safety, ensure terminal growth is less than discount_rate_scale
-        # This is a conservative constraint assuming WACC > 0
-        valid_mask = samples["terminal_growth"] < samples["discount_rate_scale"]
-        while not np.all(valid_mask):
-            # Resample only invalid entries
-            n_invalid = np.sum(~valid_mask)
-            Z_new = rng.standard_normal(size=(n_invalid, len(self.parameter_names))) @ L.T
-            U_new = norm.cdf(Z_new)
-
-            # Replace invalid entries
-            idxs = np.where(~valid_mask)[0]
-            for i, param_name in enumerate(self.parameter_names):
-                distribution = self.distributions[param_name]
-                new_values = distribution.ppf(U_new[:, i])
-                samples[param_name][idxs] = new_values
-
-            valid_mask = samples["terminal_growth"] < samples["discount_rate_scale"]
-
-        return samples
-
-    def create_summary_table(self, **params) -> Table:
-        """
-        Create Rich table summarizing model parameters.
-        Override in subclasses for model-specific formatting.
-        """
-        table = Table(show_header=False, box=box.SIMPLE, pad_edge=True)
-        table.add_column("Parameter", style="bold cyan", no_wrap=True)
-        table.add_column("Value", style="white")
-
-        for param_name, value in params.items():
-            if param_name.endswith("_rate") or param_name.endswith("_growth"):
-                table.add_row(param_name.replace("_", " ").title(), f"{value:.2%}")
-            elif param_name.endswith("_horizon"):
-                table.add_row(param_name.replace("_", " ").title(), f"{value:.1f} years")
-            else:
-                table.add_row(param_name.replace("_", " ").title(), f"{value}")
-
-        return table
+        # Define constraint: terminal growth should be less than discount rate scale
+        def terminal_growth_constraint(samples_dict):
+            return samples_dict["terminal_growth"] < samples_dict["discount_rate_scale"]
+        
+        # Apply constraint using the enforcer
+        constraint_enforcer = self._create_constraint_enforcer(
+            terminal_growth_constraint,
+            "terminal_growth < discount_rate_scale"
+        )
+        
+        return constraint_enforcer(samples, rng, L)
 
     def plot_corner_diagnostics(
         self,
@@ -531,6 +584,7 @@ class BaseDCFModel(ABC):
             quantiles=quantiles,
             show_titles=show_titles,
             title_kwargs={"fontsize": 12},
+            fig_size=figsize,
             **kwargs,
         )
 
@@ -550,9 +604,10 @@ class BaseDCFModel(ABC):
         return fig, fig.get_axes()
 
     def plot_terms_diagnostics(
-        self, 
-        stock_prices: np.ndarray, 
-        pv_fcf_fractions: np.ndarray
+        self,
+        stock_prices: np.ndarray,
+        pv_fcf_fractions: np.ndarray,
+        figsize: Tuple[float, float] = (8, 6),
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
         Create diagnostic plot showing FCF vs Terminal value contributions to stock price.
@@ -567,6 +622,8 @@ class BaseDCFModel(ABC):
             Array of simulated stock prices
         pv_fcf_fractions : np.ndarray
             Array of present value FCF fractions
+        figsize : tuple
+            Figure size (default: (8, 6))
 
         Returns:
         --------
@@ -600,7 +657,7 @@ class BaseDCFModel(ABC):
         Zi = np.reshape(kde(np.vstack([Xi.ravel(), Yi.ravel()])).T, Xi.shape)
 
         # Setup plot and scatter
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=figsize)
         scatter = ax.scatter(x, y, c=stock_prices_subset, cmap="viridis", s=10, alpha=0.5, edgecolors="none")
 
         # Add density contours
@@ -703,39 +760,42 @@ class StandardDCFModel(BaseDCFModel):
     results_df = model.sliding_dcf_analysis(df, cagr_horizon=5.0, forecast_horizon=10, n_samples=1000)
     """
 
-    def __init__(self):
-        """Initialize StandardDCFModel without predefined distributions."""
-        self.distributions = {}
-        self.parameter_names = []
-        self._correlation_matrix = None
-
-    def _define_prior_distributions(self) -> Dict[str, Any]:
-        """Not implemented - use configure_priors() instead."""
-        return {}
+    def __init__(self, df: pd.DataFrame):
+        """Initialize StandardDCFModel with financial data."""
+        super().__init__(df)
 
     def configure_priors(self, distributions: Dict[str, Any], correlation_matrix: Optional[np.ndarray] = None) -> None:
         """
-        Configure prior distributions and correlation matrix for the model.
+        Configure prior distributions and correlation matrix for the model with enhanced validation.
 
         Parameters:
         -----------
         distributions : dict
             Dictionary mapping parameter names to scipy.stats distributions.
-            Required keys: ['discount_rate_scale', 'growth_rate', 'terminal_growth', 'cagr_horizon']
+            Required keys: ['discount_rate_scale', 'terminal_growth', 'cagr_horizon']
+            Optional keys: ['growth_rate'] - if None, will use empirical growth rate with correlations preserved
         correlation_matrix : np.ndarray, optional
             Correlation matrix for parameters. If None, uses identity matrix (independent sampling).
+            If shape doesn't match distributions, it will be adjusted automatically.
 
+
+        Special handling for growth_rate:
+        - If None: Will use empirical CAGR calculated from historical data, preserving correlations
+        - If numeric (int/float): Converted to delta function distribution using norm(loc=value, scale=value*1e-6)
+        - If scipy.stats distribution: Used as-is
+        
         Example:
         --------
         from scipy.stats import uniform, norm
 
         distributions = {
             'discount_rate_scale': uniform(loc=0.05, scale=0.15),
-            'growth_rate': norm(loc=0.05, scale=0.10),
+            'growth_rate': None,  # Will be calculated from historical data with correlations preserved
             'terminal_growth': uniform(loc=0.01, scale=0.04),
             'cagr_horizon': uniform(loc=5, scale=5)
         }
 
+        # Correlation matrix for all 4 parameters - correlations will be preserved even for empirical growth_rate
         correlation = np.array([
             [1.0, 0.8, 0.2, 0.5],
             [0.8, 1.0, 0.3, 0.6],
@@ -745,38 +805,136 @@ class StandardDCFModel(BaseDCFModel):
 
         model.configure_priors(distributions, correlation)
         """
-        required_params = ["discount_rate_scale", "growth_rate", "terminal_growth", "cagr_horizon"]
+        console.print("[bold blue]Configuring prior distributions...", style="blue")
+
+        # Store original inputs for set_center method
+        self._original_distributions = distributions
+        self._original_correlation_matrix = correlation_matrix
+
+        # Required parameters (growth_rate is optional)
+        required_params = ["discount_rate_scale", "terminal_growth", "cagr_horizon"]
         missing_params = [p for p in required_params if p not in distributions]
         if missing_params:
             raise ValueError(f"Missing required parameters: {missing_params}")
 
-        self.distributions = distributions
-        self.parameter_names = list(distributions.keys())
-        self._correlation_matrix = correlation_matrix
+        # Process distributions - handle special case for growth_rate
+        processed_distributions = {}
+        param_types = {}
+        empirical_growth_rate = None
+        
+        for param_name, dist in distributions.items():
+            if param_name == "growth_rate":
+                if dist is None:
+                    # Calculate empirical growth rate and create distribution around it
+                    # Calculate empirical growth rate using default horizon for initial estimate
+                    annual_fcf = self.df["FCF-LTM"]
+                    last_fcf = annual_fcf.iloc[-1]
+                    
+                    # FCF-LTM is rolling LTM for each quarter. 10 years is 10 * 4 quarters
+                    cagr_horizon_years = 10.0
+                    offset = int(cagr_horizon_years * 4 + 1)
+                    if len(annual_fcf) >= offset:
+                        fcf_from_n_years_ago = annual_fcf.iloc[-offset]
+                        empirical_growth_rate = (last_fcf / fcf_from_n_years_ago) ** (1 / cagr_horizon_years) - 1
+                    else:
+                        empirical_growth_rate = annual_fcf.pct_change().mean()
+                    
+                    # Create a narrow distribution centered on empirical value to preserve correlations
+                    # Use small scale to approximate delta function while allowing correlation sampling
+                    scale = abs(empirical_growth_rate) * 0.01 if empirical_growth_rate != 0 else 0.001
+                    processed_distributions[param_name] = stats.norm(loc=empirical_growth_rate, scale=scale)
+                    param_types[param_name] = "empirical_with_correlation"
+                    console.print(f"  [cyan]growth_rate: Using empirical CAGR {empirical_growth_rate:.2%} with correlations preserved[/cyan]")
+                elif isinstance(dist, int | float):
+                    # Convert numeric to delta function
+                    scale = abs(dist) * 1e-6 if dist != 0 else 1e-6
+                    processed_distributions[param_name] = stats.norm(loc=dist, scale=scale)
+                    param_types[param_name] = "delta_function"
+                    console.print(f"  [green]growth_rate: Converted {dist} to delta function distribution[/green]")
+                elif hasattr(dist, 'ppf'):
+                    # Valid scipy.stats distribution
+                    processed_distributions[param_name] = dist
+                    param_types[param_name] = "distribution"
+                    console.print(f"  [green]growth_rate: Using provided distribution[/green]")
+                else:
+                    raise ValueError(f"growth_rate must be None, numeric, or scipy.stats distribution, got {type(dist)}")
+            elif hasattr(dist, 'ppf'):
+                processed_distributions[param_name] = dist
+                param_types[param_name] = "distribution"
+                console.print(f"  [green]{param_name}: Using provided distribution[/green]")
+            elif isinstance(dist, int | float):
+                # Convert numeric to delta function
+                scale = abs(dist) * 1e-6 if dist != 0 else 1e-6
+                processed_distributions[param_name] = stats.norm(loc=dist, scale=scale)
+                param_types[param_name] = "delta_function"
+                console.print(f"  [green]{param_name}: Converted {dist} to delta function distribution[/green]")
+            else:
+                raise ValueError(f"{param_name} must be numeric or scipy.stats distribution, got {type(dist)}")
 
+        # Store empirical growth rate for use in simulation
+        self._empirical_growth_rate = empirical_growth_rate
+
+        # Set up parameter names (include growth_rate even if empirical for correlation matrix consistency)
+        all_param_names = ["discount_rate_scale", "growth_rate", "terminal_growth", "cagr_horizon"]
+        # Filter to only parameters that are provided
+        self.parameter_names = [p for p in all_param_names if p in distributions]
+        
+        # Store distributions and types
+        self.distributions = processed_distributions
+        self._param_types = param_types
+        
+        # Handle correlation matrix
         if correlation_matrix is not None:
-            n_params = len(self.parameter_names)
-            if correlation_matrix.shape != (n_params, n_params):
-                raise ValueError(
-                    f"Correlation matrix shape {correlation_matrix.shape} doesn't match number of parameters {n_params}"
-                )
+            # Check if correlation matrix needs adjustment
+            n_provided_params = len(self.parameter_names)
+            
+            if correlation_matrix.shape != (n_provided_params, n_provided_params):
+                console.print(f"[yellow]Warning: Correlation matrix shape {correlation_matrix.shape} doesn't match " +
+                            f"provided parameters {n_provided_params}. Adjusting correlation matrix...[/yellow]")
+                
+                # Extract relevant submatrix based on provided parameters
+                param_indices = [all_param_names.index(p) for p in self.parameter_names]
+                adjusted_corr = correlation_matrix[np.ix_(param_indices, param_indices)]
+                
+                self._correlation_matrix = adjusted_corr
+                console.print(f"[green]✓ Adjusted correlation matrix to shape {adjusted_corr.shape}[/green]")
+            else:
+                self._correlation_matrix = correlation_matrix
+                console.print(f"[green]✓ Using provided correlation matrix with shape {correlation_matrix.shape}[/green]")
+            
+            # Validate correlation matrix properties
+            if not np.allclose(self._correlation_matrix, self._correlation_matrix.T):
+                console.print("[yellow]Warning: Correlation matrix is not symmetric. Symmetrizing...[/yellow]")
+                self._correlation_matrix = (self._correlation_matrix + self._correlation_matrix.T) / 2
+            
+            eigenvals = np.linalg.eigvals(self._correlation_matrix)
+            if np.any(eigenvals < -1e-8):
+                console.print("[yellow]Warning: Correlation matrix may not be positive semidefinite[/yellow]")
+        else:
+            self._correlation_matrix = None
+            console.print("[green]✓ No correlation matrix provided - will use independent sampling[/green]")
+
+        console.print(f"[bold green]✓[/bold green] Configuration complete:")
+        console.print(f"  - Parameters: {self.parameter_names}")
+        console.print(f"  - Distributions: {len(self.distributions)}")
+        console.print(f"  - Empirical w/ correlation: {[k for k, v in param_types.items() if v == 'empirical_with_correlation']}")
+        console.print(f"  - Delta functions: {[k for k, v in param_types.items() if v == 'delta_function']}")
+        console.print(f"  - Standard distributions: {[k for k, v in param_types.items() if v == 'distribution']}")
+        console.print(f"  - Correlation matrix: {'Provided' if self._correlation_matrix is not None else 'None (independent)'}")
 
     def calculate_dcf(
         self,
-        df: pd.DataFrame,
         discount_rate_scale: float = 1.0,
         growth_rate: Optional[float] = None,
         terminal_growth: float = 0.025,
         cagr_horizon: float = 10,
-        forecast_horizon: Optional[int] = None,
+        forecast_horizon: int = 10,
     ) -> Tuple[float, float, float]:
         """
         Calculate DCF value using standard methodology with WACC from dataframe.
 
         Parameters:
         -----------
-        df : pd.DataFrame
-            DataFrame with 'FCF-LTM', 'Shares-Outstanding', and 'WACC' columns
         discount_rate_scale : float
             Scaling factor applied to WACC to get discount rate (default=1.0)
             discount_rate = WACC * discount_rate_scale
@@ -786,23 +944,20 @@ class StandardDCFModel(BaseDCFModel):
             Perpetual growth rate after forecast horizon (as decimal)
         cagr_horizon : float
             Number of years looking back for CAGR calculation (default=10)
-        forecast_horizon : int, optional
-            Number of years to forecast into future before terminal value plateau (defaults to int(cagr_horizon))
+        forecast_horizon : int
+            Number of years to forecast into future before terminal value plateau
 
         Returns:
         --------
         tuple : (pv_fcf_fraction, dcf_value, stock_price)
         """
-        if forecast_horizon is None:
-            forecast_horizon = int(cagr_horizon)
-
         # Prepare data
-        annual_fcf = df["FCF-LTM"]
-        shares_outstanding = df["Shares-Outstanding"].iloc[-1]
+        annual_fcf = self.df["FCF-LTM"]
+        shares_outstanding = self.df["Shares-Outstanding"].iloc[-1]
         last_fcf = annual_fcf.iloc[-1]  # Most recent year's FCF
 
         # Get WACC and apply scaling factor
-        wacc = df["WACC"].iloc[-1]  # Use most recent WACC
+        wacc = self.df["WACC"].iloc[-1]  # Use most recent WACC
         discount_rate = wacc * discount_rate_scale
 
         # Determine CAGR (g)
