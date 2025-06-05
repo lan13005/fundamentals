@@ -351,7 +351,7 @@ class BaseDCFModel(ABC):
         console.print(f"Samples per center date: {n_samples:,}")
         
         # Ensure df has datetime index
-        if not isinstance(self.df.index, pd.DatetimeIndex):
+        if not isinstance(self._original_df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame must have datetime index for sliding analysis")
         
         results = []
@@ -359,12 +359,12 @@ class BaseDCFModel(ABC):
         
         # Find valid center dates (must have enough historical data)
         valid_start_idx = quarters_needed
-        valid_end_idx = len(self.df)
+        valid_end_idx = len(self._original_df)
         
         total_center_dates = valid_end_idx - valid_start_idx
         total_samples = total_center_dates * n_samples
         
-        console.print(f"Valid center date range: {self.df.index[valid_start_idx]} to {self.df.index[valid_end_idx-1]}")
+        console.print(f"Valid center date range: {self._original_df.index[valid_start_idx]} to {self._original_df.index[valid_end_idx-1]}")
         console.print(f"Total center dates: {total_center_dates}")
         console.print(f"Total samples to generate: {total_samples:,}")
         
@@ -381,7 +381,7 @@ class BaseDCFModel(ABC):
             task = progress.add_task("Running sliding Monte Carlo analysis...", total=total_center_dates)
             
             for center_idx in range(valid_start_idx, valid_end_idx):
-                center_date = self.df.index[center_idx]
+                center_date = self._original_df.index[center_idx]
                 
                 try:
                     # Set center date for sliding window analysis
@@ -403,7 +403,6 @@ class BaseDCFModel(ABC):
                             'stock_price': stock_prices[sample_idx],
                             'dcf_value': dcf_values[sample_idx],
                             'pv_fcf_fraction': pv_fcf_fractions[sample_idx],
-                            'quarters_available': len(self.df),
                         }
                         
                         # Add all parameter samples
@@ -447,7 +446,7 @@ class BaseDCFModel(ABC):
         summary_table.add_row("Max Stock Price", f"${results_df['stock_price'].max():.2f}")
         
         # Add parameter statistics
-        param_columns = [col for col in results_df.columns if col not in ['center_date', 'sample_id', 'stock_price', 'dcf_value', 'pv_fcf_fraction', 'quarters_available']]
+        param_columns = [col for col in results_df.columns if col not in ['center_date', 'sample_id', 'stock_price', 'dcf_value', 'pv_fcf_fraction']]
         summary_table.add_row("Parameter Columns", f"{len(param_columns)}")
         
         console.print(summary_table)
