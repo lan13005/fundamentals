@@ -21,7 +21,7 @@ from rich.table import Table
 from scipy import stats
 from scipy.stats import gaussian_kde, norm
 
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 
 logger = get_logger(__name__)
 console = Console()

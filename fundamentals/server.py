@@ -5,7 +5,7 @@ from pydantic import Field
 from rich.console import Console
 
 from fundamentals.tools import get_statements_impl
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 
 logger = get_logger(__name__)
 console = Console()

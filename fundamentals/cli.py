@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 
 logger = get_logger(__name__)
 console = Console()
@@ -170,7 +170,7 @@ def run_company_info(args):
 
 def run_set_log_level(args):
     """Set the global logging level for the fundamentals package."""
-    from fundamentals.utility.logging_config import set_logging_level
+    from fundamentals.utility.logger import set_logging_level
 
     set_logging_level(args.level)
 

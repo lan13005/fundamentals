@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from fundamentals.utility.general import get_latest_quarter_end, get_sp500_tickers
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 
 logger = get_logger(__name__)
 console = Console()

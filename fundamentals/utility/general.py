@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 from cycler import cycler
 
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 
 logger = get_logger(__name__)
 

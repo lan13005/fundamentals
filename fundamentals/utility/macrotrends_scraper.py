@@ -21,7 +21,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from fundamentals.utility.general import get_latest_quarter_end, get_nasdaq_tickers, get_sp500_tickers
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 from fundamentals.utility.wacc import compute_rolling_beta, get_historical_erp, get_risk_free_rate
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, message="invalid escape")

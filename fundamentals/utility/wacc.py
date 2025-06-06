@@ -14,7 +14,7 @@ import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
 
-from fundamentals.utility.logging_config import get_logger
+from fundamentals.utility.logger import get_logger
 
 logger = get_logger(__name__)
 
