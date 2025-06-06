@@ -9,7 +9,9 @@ from fastmcp import Context
 from rich.console import Console
 
 from fundamentals.utility.general import reformat_markdown_financial_table
+from fundamentals.utility.logging_config import get_logger
 
+logger = get_logger(__name__)
 console = Console(file=open(os.devnull, "w"))
 
 load_dotenv()
@@ -94,16 +96,16 @@ async def get_statements_impl(ticker: str, form: str, date: str, statement_type:
     date = adjust_date_range(date)
 
     if date != original_date:
-        console.log(f"Date range adjusted from {original_date} to {date} to avoid pre-2009 data")
+        logger.info(f"Date range adjusted from {original_date} to {date} to avoid pre-2009 data")
         await ctx.warning(f"Date range adjusted from {original_date} to {date} to avoid pre-2009 data")
 
-    console.log(
+    logger.debug(
         f"Entering get_statements_impl with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}"
     )
     available_forms = set(["10-Q", "10-K", "8-K"])
 
     if form not in available_forms:
-        console.log(f"Form {form} is not available")
+        logger.warning(f"Form {form} is not available")
         await ctx.error(f"Form {form} is not available: choose from {available_forms}")
         return {"error": f"Form {form} is not available: choose from {available_forms}"}
 
@@ -133,22 +135,22 @@ async def get_statements_impl(ticker: str, form: str, date: str, statement_type:
         ]
     )
     if statement_type in disallowed_statements:
-        console.log(f"Statement {statement_type} is not allowed")
+        logger.warning(f"Statement {statement_type} is not allowed")
         await ctx.error(f"Statement {statement_type} is not allowed.")
         return {"error": f"Statement {statement_type} is not allowed."}
 
     if statement_type not in available_statements:
-        console.log(f"Statement {statement_type} is not available")
+        logger.warning(f"Statement {statement_type} is not available")
         await ctx.error(f"Statement {statement_type} is not available: choose from {available_statements}")
         return {"error": f"Statement {statement_type} is not available: choose from {available_statements}"}
 
     try:
         company = edgar.Company(ticker)
-        console.log(f"Fetched company object for {ticker}")
+        logger.debug(f"Fetched company object for {ticker}")
         filings = company.get_filings()
-        console.log(f"Fetched filings for {ticker}")
+        logger.debug(f"Fetched filings for {ticker}")
         filtered_filings = filings.filter(form=form, date=date)
-        console.log(f"Filtered filings for form={form}, date={date}")
+        logger.debug(f"Filtered filings for form={form}, date={date}")
         xbrls = XBRLS.from_filings(filtered_filings)
         statements = xbrls.statements
         stitched_statement = statements[statement_type]  # StitchedStatement object
@@ -164,7 +166,7 @@ async def get_statements_impl(ticker: str, form: str, date: str, statement_type:
         period_count = len(found_periods)
         if period_count == 0 or len(found_stmt_types) == 0:
             msg = f"No statements found for {statement_type} (form={form}, ticker={ticker}, date={date})"
-            console.log(f"{msg}")
+            logger.warning(f"{msg}")
             await ctx.error(msg)
             return {"error": msg}
 
@@ -172,14 +174,14 @@ async def get_statements_impl(ticker: str, form: str, date: str, statement_type:
         stitched_statement_md = stitched_statement.render().to_markdown()
         stitched_statement_md = reformat_markdown_financial_table(stitched_statement_md)
 
-        console.log(f"Returning statement for {statement_type}")
+        logger.info(f"Successfully retrieved statement for {statement_type}")
         return {"stitched_statement": stitched_statement_md}
     except Exception as e:
         error_msg = format_error_msg(
             f"Error in get_statements_impl for ticker={ticker}, form={form}, date={date}, statement={statement_type}",
             e,
         )
-        console.log(error_msg)
+        logger.error(error_msg)
         await ctx.error(error_msg)
         return {"error": error_msg}
 
@@ -196,14 +198,14 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
     original_date = date
     date = adjust_date_range(date)
     if date != original_date:
-        console.log(
+        logger.info(
             f"Date range adjusted from {original_date} to {date} to avoid pre-2009 data or to use 'latest' option"
         )
         await ctx.error(
             f"Date range adjusted from {original_date} to {date} to avoid pre-2009 data or to use 'latest' option"
         )
 
-    console.log(
+    logger.debug(
         f"Entering summarize_financial_report_impl with ticker={ticker}, form={form}, date={date}, statement_type={statement_type}"
     )
     try:
@@ -211,7 +213,7 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
         statement_result = await get_statements_impl(ticker, form, date, statement_type, ctx)
         if not statement_result or "error" in statement_result:
             error_msg = statement_result.get("error", "No statement data available to summarize.")
-            console.log(f"Error in get_statements_impl: {error_msg}")
+            logger.error(f"Error in get_statements_impl: {error_msg}")
             await ctx.error(error_msg)
             return {"error": error_msg}
 
@@ -227,16 +229,16 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
         )
 
         # Use the LLM to generate the summary
-        console.log("Prompt prepared for LLM. Sending to ctx.sample...")
+        logger.debug("Prompt prepared for LLM. Sending to ctx.sample...")
         if not hasattr(ctx, "sample"):
             error_msg = "Context object missing required 'sample' method"
-            console.log(f"{error_msg}")
+            logger.error(f"{error_msg}")
             await ctx.error(error_msg)
             return {"error": error_msg}
         try:
             response = await ctx.sample(prompt)
             if not hasattr(response, "text"):
-                console.log(f"Unexpected response type: {type(response)}")
+                logger.error(f"Unexpected response type: {type(response)}")
                 raise Exception(f"Unexpected response type: {type(response)}")
             summary = response.text
         except AttributeError as e:
@@ -244,7 +246,7 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
                 f"LLM response missing required attributes in summarize_financial_report_impl for ticker={ticker}, form={form}, date={date}, statement={statement_type}",
                 e,
             )
-            console.log(error_msg)
+            logger.error(error_msg)
             await ctx.error(error_msg)
             return {"error": error_msg}
         except Exception as e:
@@ -252,10 +254,10 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
                 f"LLM prompt failed for ticker={ticker}, form={form}, date={date}, statement={statement_type}",
                 e,
             )
-            console.log(error_msg)
+            logger.error(error_msg)
             await ctx.error(error_msg)
             return {"error": error_msg}
-        console.log("LLM summary received.")
+        logger.info("LLM summary received.")
 
         return {"summary": summary}
 
@@ -264,6 +266,6 @@ async def summarize_financial_report_impl(ticker: str, form: str, date: str, sta
             f"Unexpected error in summarize_financial_report_impl for ticker={ticker}, form={form}, date={date}, statement={statement_type}",
             e,
         )
-        console.log(error_msg)
+        logger.error(error_msg)
         await ctx.error(error_msg)
         return {"error": error_msg}

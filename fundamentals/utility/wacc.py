@@ -14,6 +14,10 @@ import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
 
+from fundamentals.utility.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def get_risk_free_rate(start_date="2010-01-01", end_date="2025-06-01", verbose=False):
     """

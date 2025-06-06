@@ -12,6 +12,9 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 
+from fundamentals.utility.logging_config import get_logger
+
+logger = get_logger(__name__)
 console = Console()
 
 # Data source: https://www.zillow.com/research/data/

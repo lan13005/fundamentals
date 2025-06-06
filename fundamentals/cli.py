@@ -5,6 +5,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from fundamentals.utility.logging_config import get_logger
+
+logger = get_logger(__name__)
 console = Console()
 
 
@@ -165,6 +168,13 @@ def run_company_info(args):
     )
 
 
+def run_set_log_level(args):
+    """Set the global logging level for the fundamentals package."""
+    from fundamentals.utility.logging_config import set_logging_level
+
+    set_logging_level(args.level)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fundamentals CLI - Tools for financial data analysis", add_help=False)
     subparsers = parser.add_subparsers(title="subcommands", dest="command", required=True)
@@ -322,6 +332,20 @@ def main():
     )
 
     parser_macrotrends.set_defaults(func=run_macrotrends)
+
+    # set-log-level
+    parser_log = subparsers.add_parser(
+        "set-log-level",
+        help="Set the global logging level for the fundamentals package",
+        description="Set the global logging level that will be saved to .env file and used across all fundamentals modules.",
+        add_help=False,
+    )
+    parser_log.add_argument(
+        "level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging level to set (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+    parser_log.set_defaults(func=run_set_log_level)
 
     # Handle help flags
     if len(sys.argv) == 1:

@@ -21,6 +21,9 @@ from rich.table import Table
 from scipy import stats
 from scipy.stats import gaussian_kde, norm
 
+from fundamentals.utility.logging_config import get_logger
+
+logger = get_logger(__name__)
 console = Console()
 
 
@@ -65,12 +68,17 @@ class BaseDCFModel(ABC):
         if center_idx >= len(self._original_df):
             raise ValueError(f"Center index {center_idx} exceeds original data length {len(self._original_df)}")
         
+        if center_idx < 0:
+            raise ValueError(f"Center index {center_idx} must be non-negative")
+        
         # Subset data up to center date
         self.df = self._original_df.iloc[:center_idx + 1].copy()
         
         # Reconfigure priors with new data subset if we have original distributions stored
         if hasattr(self, '_original_distributions') and hasattr(self, '_original_correlation_matrix'):
             self.configure_priors(self._original_distributions, self._original_correlation_matrix)
+        else:
+            raise ValueError("Original distributions not stored. Cannot reconfigure priors for sliding analysis.")
 
     def _get_correlation_matrix(self) -> np.ndarray:
         """
@@ -120,11 +128,11 @@ class BaseDCFModel(ABC):
             
             # Check if matrix is symmetric and positive semidefinite
             if not np.allclose(self._correlation_matrix, self._correlation_matrix.T):
-                console.print("[yellow]Warning: Correlation matrix is not symmetric[/yellow]")
+                logger.warning("Correlation matrix is not symmetric")
             
             eigenvals = np.linalg.eigvals(self._correlation_matrix)
             if np.any(eigenvals < -1e-8):
-                console.print("[yellow]Warning: Correlation matrix may not be positive semidefinite[/yellow]")
+                logger.warning("Correlation matrix may not be positive semidefinite")
 
     @abstractmethod
     def configure_priors(self, distributions: Dict[str, Any], correlation_matrix: Optional[np.ndarray] = None, **kwargs) -> None:
@@ -204,6 +212,7 @@ class BaseDCFModel(ABC):
 
         if show_progress:
             console.rule("[bold blue]Monte Carlo DCF Simulation")
+            logger.info("Starting Monte Carlo DCF simulation")
 
         # Sample parameters
         if show_progress:
@@ -223,12 +232,12 @@ class BaseDCFModel(ABC):
         pv_fcf_fractions, dcf_values, stock_prices, parameter_samples = results
 
         if show_progress:
-            console.print("Results returned as:", style="bold green")
-            console.print(f" - pv_fcf_fractions (shape): {pv_fcf_fractions.shape}", style="green")
-            console.print(f" - dcf_values (shape): {dcf_values.shape}", style="green")
-            console.print(f" - stock_prices (shape): {stock_prices.shape}", style="green")
-            console.print(f" - parameter_samples (Dict keys): {list(parameter_samples.keys())}", style="green")
-            console.print(f"[bold green]✓[/bold green] Simulation complete: {n_samples:,} samples generated", style="green")
+            logger.info("Results returned with shapes:")
+            logger.debug(f" - pv_fcf_fractions: {pv_fcf_fractions.shape}")
+            logger.debug(f" - dcf_values: {dcf_values.shape}")
+            logger.debug(f" - stock_prices: {stock_prices.shape}")
+            logger.debug(f" - parameter_samples keys: {list(parameter_samples.keys())}")
+            logger.info(f"Simulation complete: {n_samples:,} samples generated")
 
         return pv_fcf_fractions, dcf_values, stock_prices, parameter_samples
 
@@ -295,17 +304,15 @@ class BaseDCFModel(ABC):
 
         if progress:
             # Print summary
-            console.print(
-                f"PV FCF Fractions: {pv_fcf_fractions.mean():.2f} ± {pv_fcf_fractions.std():.2f}", style="green"
-            )
-            console.print(f"DCF values: {dcf_values.mean():.2f} ± {dcf_values.std():.2f}", style="green")
-            console.print(f"Stock prices: {stock_prices.mean():.2f} ± {stock_prices.std():.2f}", style="green")
+            logger.info(f"PV FCF Fractions: {pv_fcf_fractions.mean():.2f} ± {pv_fcf_fractions.std():.2f}")
+            logger.info(f"DCF values: {dcf_values.mean():.2f} ± {dcf_values.std():.2f}")
+            logger.info(f"Stock prices: {stock_prices.mean():.2f} ± {stock_prices.std():.2f}")
 
         return pv_fcf_fractions, dcf_values, stock_prices, samples
 
     def sliding_dcf_analysis(
         self,
-        cagr_horizon: float,
+        cagr_lookback: float,
         forecast_horizon: int,
         n_samples: int = 1000,
         random_state: int = 42,
@@ -322,7 +329,7 @@ class BaseDCFModel(ABC):
 
         Parameters:
         -----------
-        cagr_horizon : float
+        cagr_lookback : float
             Number of years to look back for CAGR calculation
         forecast_horizon : int
             Number of years to forecast forward for DCF calculation
@@ -346,27 +353,36 @@ class BaseDCFModel(ABC):
         self._check_configuration()
             
         console.rule("[bold blue]Sliding DCF Monte Carlo Analysis")
-        console.print(f"CAGR Horizon: {cagr_horizon} years ({cagr_horizon * 4:.0f} quarters)")
-        console.print(f"Forecast Horizon: {forecast_horizon} years")
-        console.print(f"Samples per center date: {n_samples:,}")
+        logger.info("Starting sliding DCF Monte Carlo analysis")
+        logger.info(f"CAGR Horizon: {cagr_lookback} years ({cagr_lookback * 4:.0f} quarters)")
+        logger.info(f"Forecast Horizon: {forecast_horizon} years")
+        logger.info(f"Samples per center date: {n_samples:,}")
         
         # Ensure df has datetime index
         if not isinstance(self._original_df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame must have datetime index for sliding analysis")
         
         results = []
-        quarters_needed = int(cagr_horizon * 4)  # Convert years to quarters
+        quarters_needed = int(cagr_lookback * 4)  # Convert years to quarters
+        forecast_quarters = int(forecast_horizon * 4)  # Convert forecast horizon to quarters
         
-        # Find valid center dates (must have enough historical data)
+        # Find valid center dates
+        # Start: Must have enough historical data for CAGR calculation
         valid_start_idx = quarters_needed
+        # End: Can go to the end of data since we can forecast into the future
         valid_end_idx = len(self._original_df)
         
         total_center_dates = valid_end_idx - valid_start_idx
         total_samples = total_center_dates * n_samples
         
-        console.print(f"Valid center date range: {self._original_df.index[valid_start_idx]} to {self._original_df.index[valid_end_idx-1]}")
-        console.print(f"Total center dates: {total_center_dates}")
-        console.print(f"Total samples to generate: {total_samples:,}")
+        # Debug information
+        logger.debug(f"Data range: {self._original_df.index[0]} to {self._original_df.index[-1]}")
+        logger.debug(f"Total data points: {len(self._original_df)}")
+        logger.debug(f"CAGR horizon: {cagr_lookback} years ({quarters_needed} quarters)")
+        logger.debug(f"Forecast horizon: {forecast_horizon} years ({forecast_quarters} quarters)")
+        logger.info(f"Valid center date range: {self._original_df.index[valid_start_idx]} to {self._original_df.index[valid_end_idx-1]}")
+        logger.info(f"Total center dates: {total_center_dates}")
+        logger.info(f"Total samples to generate: {total_samples:,}")
         
         with Progress(
             SpinnerColumn(),
@@ -412,7 +428,7 @@ class BaseDCFModel(ABC):
                         results.append(sample_result)
                         
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Failed to simulate DCF for {center_date}: {e}[/yellow]")
+                    logger.warning(f"Failed to simulate DCF for {center_date}: {e}")
                     continue
                 
                 progress.advance(task)
@@ -422,13 +438,13 @@ class BaseDCFModel(ABC):
         
         # Check if we have any results
         if len(results_df) == 0:
-            console.print("[red]No successful simulations! Check your data and parameters.[/red]")
+            logger.error("No successful simulations! Check your data and parameters.")
             return results_df
         
         # Save to file if requested
         if output_file:
             results_df.to_csv(output_file, index=False)
-            console.print(f"[bold green]✓[/bold green] Results saved to: {output_file}")
+            logger.info(f"Results saved to: {output_file}")
         
         # Print summary statistics
         console.print("\n[bold blue]Summary Statistics:[/bold blue]")
@@ -450,9 +466,9 @@ class BaseDCFModel(ABC):
         summary_table.add_row("Parameter Columns", f"{len(param_columns)}")
         
         console.print(summary_table)
-        console.print(f"[bold green]✓[/bold green] Sliding Monte Carlo DCF analysis complete")
-        console.print(f"Result DataFrame shape: {results_df.shape}")
-        console.print(f"Columns: {list(results_df.columns)}")
+        logger.info("Sliding Monte Carlo DCF analysis complete")
+        logger.debug(f"Result DataFrame shape: {results_df.shape}")
+        logger.debug(f"Columns: {list(results_df.columns)}")
         
         return results_df
 
@@ -493,7 +509,7 @@ class BaseDCFModel(ABC):
                 iteration += 1
                 
             if iteration >= max_iterations:
-                console.print(f"[yellow]Warning: {constraint_name} constraint couldn't be satisfied after {max_iterations} iterations[/yellow]")
+                logger.warning(f"{constraint_name} constraint couldn't be satisfied after {max_iterations} iterations")
                 
             return samples
         return enforcer
@@ -555,7 +571,7 @@ class BaseDCFModel(ABC):
         --------
         tuple : (fig, axes) matplotlib figure and axes objects
         """
-        console.print("[bold blue]Creating diagnostic corner plots...", style="blue")
+        logger.info("Creating diagnostic corner plots")
 
         # Prepare data with stock_price as first column
         data_dict = {"stock_price": stock_prices}
@@ -598,7 +614,7 @@ class BaseDCFModel(ABC):
                 ax.axvline(current_stock_price, color="red", linestyle="--", linewidth=2, alpha=0.8)
 
         plt.tight_layout()
-        console.print("[bold green]✓[/bold green] Corner plots generated successfully", style="green")
+        logger.info("Corner plots generated successfully")
 
         return fig, fig.get_axes()
 
@@ -628,7 +644,7 @@ class BaseDCFModel(ABC):
         --------
         tuple : (fig, ax) matplotlib figure and axes objects
         """
-        console.print("[bold blue]Creating DCF terms diagnostic plot...", style="blue")
+        logger.info("Creating DCF terms diagnostic plot")
 
         # Sample subset for performance
         n_subset = min(10000, len(stock_prices))
@@ -732,7 +748,7 @@ class BaseDCFModel(ABC):
         cbar.set_label("Total Stock Price")
 
         plt.tight_layout()
-        console.print("[bold green]✓[/bold green] DCF terms diagnostic plot generated successfully", style="green")
+        logger.info("DCF terms diagnostic plot generated successfully")
 
         return fig, ax
 
@@ -745,7 +761,7 @@ class StandardDCFModel(BaseDCFModel):
     - discount_rate: Required rate of return (float)
     - growth_rate: Revenue/FCF growth rate (float, optional - can be calculated from data)
     - terminal_growth: Perpetual growth rate (float)
-    - cagr_horizon: Number of years for historical CAGR calculation (float)
+    - cagr_lookback: Number of years for historical CAGR calculation (float)
 
     Usage:
     ------
@@ -756,7 +772,7 @@ class StandardDCFModel(BaseDCFModel):
     pv_fcf_fractions, dcf_values, stock_prices, parameter_samples = model.simulate(df, n_samples=1000)
     
     # Or use sliding window analysis
-    results_df = model.sliding_dcf_analysis(df, cagr_horizon=5.0, forecast_horizon=10, n_samples=1000)
+    results_df = model.sliding_dcf_analysis(df, cagr_lookback=5.0, forecast_horizon=10, n_samples=1000)
     """
 
     def __init__(self, df: pd.DataFrame):
@@ -771,7 +787,7 @@ class StandardDCFModel(BaseDCFModel):
         -----------
         distributions : dict
             Dictionary mapping parameter names to scipy.stats distributions.
-            Required keys: ['discount_rate_scale', 'terminal_growth', 'cagr_horizon']
+            Required keys: ['discount_rate_scale', 'terminal_growth', 'cagr_lookback']
             Optional keys: ['growth_rate'] - if None, will use empirical growth rate with correlations preserved
         correlation_matrix : np.ndarray, optional
             Correlation matrix for parameters. If None, uses identity matrix (independent sampling).
@@ -791,7 +807,7 @@ class StandardDCFModel(BaseDCFModel):
             'discount_rate_scale': uniform(loc=0.05, scale=0.15),
             'growth_rate': None,  # Will be calculated from historical data with correlations preserved
             'terminal_growth': uniform(loc=0.01, scale=0.04),
-            'cagr_horizon': uniform(loc=5, scale=5)
+            'cagr_lookback': uniform(loc=5, scale=5)
         }
 
         # Correlation matrix for all 4 parameters - correlations will be preserved even for empirical growth_rate
@@ -804,14 +820,14 @@ class StandardDCFModel(BaseDCFModel):
 
         model.configure_priors(distributions, correlation)
         """
-        console.print("[bold blue]Configuring prior distributions...", style="blue")
+        logger.debug("Configuring prior distributions")
 
         # Store original inputs for set_center method
         self._original_distributions = distributions
         self._original_correlation_matrix = correlation_matrix
 
         # Required parameters (growth_rate is optional)
-        required_params = ["discount_rate_scale", "terminal_growth", "cagr_horizon"]
+        required_params = ["discount_rate_scale", "terminal_growth", "cagr_lookback"]
         missing_params = [p for p in required_params if p not in distributions]
         if missing_params:
             raise ValueError(f"Missing required parameters: {missing_params}")
@@ -830,11 +846,11 @@ class StandardDCFModel(BaseDCFModel):
                     last_fcf = annual_fcf.iloc[-1]
                     
                     # FCF-LTM is rolling LTM for each quarter. 10 years is 10 * 4 quarters
-                    cagr_horizon_years = 10.0
-                    offset = int(cagr_horizon_years * 4 + 1)
+                    cagr_lookback_years = 10.0
+                    offset = int(cagr_lookback_years * 4 + 1)
                     if len(annual_fcf) >= offset:
                         fcf_from_n_years_ago = annual_fcf.iloc[-offset]
-                        empirical_growth_rate = (last_fcf / fcf_from_n_years_ago) ** (1 / cagr_horizon_years) - 1
+                        empirical_growth_rate = (last_fcf / fcf_from_n_years_ago) ** (1 / cagr_lookback_years) - 1
                     else:
                         empirical_growth_rate = annual_fcf.pct_change().mean()
                     
@@ -843,30 +859,30 @@ class StandardDCFModel(BaseDCFModel):
                     scale = abs(empirical_growth_rate) * 0.01 if empirical_growth_rate != 0 else 0.001
                     processed_distributions[param_name] = stats.norm(loc=empirical_growth_rate, scale=scale)
                     param_types[param_name] = "empirical_with_correlation"
-                    console.print(f"  [cyan]growth_rate: Using empirical CAGR {empirical_growth_rate:.2%} with correlations preserved[/cyan]")
+                    logger.debug(f"growth_rate: Using empirical CAGR {empirical_growth_rate:.2%} with correlations preserved")
                 elif isinstance(dist, int | float):
                     # Convert numeric to delta function
                     scale = abs(dist) * 1e-6 if dist != 0 else 1e-6
                     processed_distributions[param_name] = stats.norm(loc=dist, scale=scale)
                     param_types[param_name] = "delta_function"
-                    console.print(f"  [green]growth_rate: Converted {dist} to delta function distribution[/green]")
+                    logger.debug(f"growth_rate: Converted {dist} to delta function distribution")
                 elif hasattr(dist, 'ppf'):
                     # Valid scipy.stats distribution
                     processed_distributions[param_name] = dist
                     param_types[param_name] = "distribution"
-                    console.print(f"  [green]growth_rate: Using provided distribution[/green]")
+                    logger.debug(f"growth_rate: Using provided distribution")
                 else:
                     raise ValueError(f"growth_rate must be None, numeric, or scipy.stats distribution, got {type(dist)}")
             elif hasattr(dist, 'ppf'):
                 processed_distributions[param_name] = dist
                 param_types[param_name] = "distribution"
-                console.print(f"  [green]{param_name}: Using provided distribution[/green]")
+                logger.debug(f"{param_name}: Using provided distribution")
             elif isinstance(dist, int | float):
                 # Convert numeric to delta function
                 scale = abs(dist) * 1e-6 if dist != 0 else 1e-6
                 processed_distributions[param_name] = stats.norm(loc=dist, scale=scale)
                 param_types[param_name] = "delta_function"
-                console.print(f"  [green]{param_name}: Converted {dist} to delta function distribution[/green]")
+                logger.debug(f"{param_name}: Converted {dist} to delta function distribution")
             else:
                 raise ValueError(f"{param_name} must be numeric or scipy.stats distribution, got {type(dist)}")
 
@@ -874,7 +890,7 @@ class StandardDCFModel(BaseDCFModel):
         self._empirical_growth_rate = empirical_growth_rate
 
         # Set up parameter names (include growth_rate even if empirical for correlation matrix consistency)
-        all_param_names = ["discount_rate_scale", "growth_rate", "terminal_growth", "cagr_horizon"]
+        all_param_names = ["discount_rate_scale", "growth_rate", "terminal_growth", "cagr_lookback"]
         # Filter to only parameters that are provided
         self.parameter_names = [p for p in all_param_names if p in distributions]
         
@@ -888,45 +904,45 @@ class StandardDCFModel(BaseDCFModel):
             n_provided_params = len(self.parameter_names)
             
             if correlation_matrix.shape != (n_provided_params, n_provided_params):
-                console.print(f"[yellow]Warning: Correlation matrix shape {correlation_matrix.shape} doesn't match " +
-                            f"provided parameters {n_provided_params}. Adjusting correlation matrix...[/yellow]")
+                logger.warning(f"Correlation matrix shape {correlation_matrix.shape} doesn't match " +
+                            f"provided parameters {n_provided_params}. Adjusting correlation matrix...")
                 
                 # Extract relevant submatrix based on provided parameters
                 param_indices = [all_param_names.index(p) for p in self.parameter_names]
                 adjusted_corr = correlation_matrix[np.ix_(param_indices, param_indices)]
                 
                 self._correlation_matrix = adjusted_corr
-                console.print(f"[green]✓ Adjusted correlation matrix to shape {adjusted_corr.shape}[/green]")
+                logger.debug(f"Adjusted correlation matrix to shape {adjusted_corr.shape}")
             else:
                 self._correlation_matrix = correlation_matrix
-                console.print(f"[green]✓ Using provided correlation matrix with shape {correlation_matrix.shape}[/green]")
+                logger.debug(f"Using provided correlation matrix with shape {correlation_matrix.shape}")
             
             # Validate correlation matrix properties
             if not np.allclose(self._correlation_matrix, self._correlation_matrix.T):
-                console.print("[yellow]Warning: Correlation matrix is not symmetric. Symmetrizing...[/yellow]")
+                logger.warning("Correlation matrix is not symmetric. Symmetrizing...")
                 self._correlation_matrix = (self._correlation_matrix + self._correlation_matrix.T) / 2
             
             eigenvals = np.linalg.eigvals(self._correlation_matrix)
             if np.any(eigenvals < -1e-8):
-                console.print("[yellow]Warning: Correlation matrix may not be positive semidefinite[/yellow]")
+                logger.warning("Correlation matrix may not be positive semidefinite")
         else:
             self._correlation_matrix = None
-            console.print("[green]✓ No correlation matrix provided - will use independent sampling[/green]")
+            logger.debug("No correlation matrix provided - will use independent sampling")
 
-        console.print(f"[bold green]✓[/bold green] Configuration complete:")
-        console.print(f"  - Parameters: {self.parameter_names}")
-        console.print(f"  - Distributions: {len(self.distributions)}")
-        console.print(f"  - Empirical w/ correlation: {[k for k, v in param_types.items() if v == 'empirical_with_correlation']}")
-        console.print(f"  - Delta functions: {[k for k, v in param_types.items() if v == 'delta_function']}")
-        console.print(f"  - Standard distributions: {[k for k, v in param_types.items() if v == 'distribution']}")
-        console.print(f"  - Correlation matrix: {'Provided' if self._correlation_matrix is not None else 'None (independent)'}")
+        logger.debug("Configuration complete")
+        logger.debug(f"Parameters: {self.parameter_names}")
+        logger.debug(f"Distributions: {len(self.distributions)}")
+        logger.debug(f"Empirical w/ correlation: {[k for k, v in param_types.items() if v == 'empirical_with_correlation']}")
+        logger.debug(f"Delta functions: {[k for k, v in param_types.items() if v == 'delta_function']}")
+        logger.debug(f"Standard distributions: {[k for k, v in param_types.items() if v == 'distribution']}")
+        logger.debug(f"Correlation matrix: {'Provided' if self._correlation_matrix is not None else 'None (independent)'}")
 
     def calculate_dcf(
         self,
         discount_rate_scale: float = 1.0,
         growth_rate: Optional[float] = None,
         terminal_growth: float = 0.025,
-        cagr_horizon: float = 10,
+        cagr_lookback: float = 10,
         forecast_horizon: int = 10,
     ) -> Tuple[float, float, float]:
         """
@@ -941,7 +957,7 @@ class StandardDCFModel(BaseDCFModel):
             If provided, use this growth rate instead of calculating from historical FCF
         terminal_growth : float
             Perpetual growth rate after forecast horizon (as decimal)
-        cagr_horizon : float
+        cagr_lookback : float
             Number of years looking back for CAGR calculation (default=10)
         forecast_horizon : int
             Number of years to forecast into future before terminal value plateau
@@ -963,11 +979,11 @@ class StandardDCFModel(BaseDCFModel):
         if growth_rate is not None:
             g = growth_rate
         else:
-            # FCF-LTM is rolling LTM for each quarter. cagr_horizon years is cagr_horizon * 4 quarters
-            offset = int(cagr_horizon * 4 + 1)
+            # FCF-LTM is rolling LTM for each quarter. cagr_lookback years is cagr_lookback * 4 quarters
+            offset = int(cagr_lookback * 4 + 1)
             if len(annual_fcf) >= offset:
                 fcf_from_n_years_ago = annual_fcf.iloc[-offset]
-                g = (last_fcf / fcf_from_n_years_ago) ** (1 / cagr_horizon) - 1
+                g = (last_fcf / fcf_from_n_years_ago) ** (1 / cagr_lookback) - 1
             else:
                 g = annual_fcf.pct_change().mean()
 

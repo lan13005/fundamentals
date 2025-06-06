@@ -7,6 +7,10 @@ import requests
 from bs4 import BeautifulSoup
 from cycler import cycler
 
+from fundamentals.utility.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def get_sp500_tickers() -> list[str]:
     """Get latest S&P 500 tickers from Wikipedia."""

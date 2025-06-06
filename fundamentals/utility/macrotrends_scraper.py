@@ -21,9 +21,11 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from fundamentals.utility.general import get_latest_quarter_end, get_nasdaq_tickers, get_sp500_tickers
+from fundamentals.utility.logging_config import get_logger
 from fundamentals.utility.wacc import compute_rolling_beta, get_historical_erp, get_risk_free_rate
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, message="invalid escape")
+logger = get_logger(__name__)
 console = Console()
 
 # ───────────── configuration ───────────── #
@@ -175,6 +177,7 @@ class AdaptiveSemaphore:
                     # First rate limit: reduce by 40%
                     new_size = max(self.min_size, int(self._current_size * 0.6))
                     await self._resize_semaphore(new_size)
+                    logger.warning(f"Rate limit detected! Reduced semaphore to {new_size} (-40%)")
                     console.print(f"[yellow]Rate limit detected! Reduced semaphore to {new_size} (-40%)[/yellow]")
 
                 elif self._consecutive_rate_limits >= 2:

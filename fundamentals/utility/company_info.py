@@ -8,7 +8,9 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from fundamentals.utility.general import get_latest_quarter_end, get_sp500_tickers
+from fundamentals.utility.logging_config import get_logger
 
+logger = get_logger(__name__)
 console = Console()
 
 
@@ -38,12 +40,15 @@ def get_company_info(
     if tickers is not None:
         # Custom tickers provided
         use_sp500 = False
+        logger.info(f"Using provided tickers: {tickers}")
         console.print(f"[blue]Using provided tickers: {tickers}[/blue]")
     elif use_sp500:
+        logger.info("Fetching S&P 500 tickers from Wikipedia")
         console.print("[blue]Fetching S&P 500 tickers from Wikipedia...[/blue]")
         # Grab the current S&P 500 tickers from Wikipedia
         tickers = get_sp500_tickers()
         file_name = "SP500"
+        logger.info(f"Found {len(tickers)} S&P 500 tickers")
         console.print(f"[green]Found {len(tickers)} S&P 500 tickers[/green]")
     else:
         raise ValueError("Either use_sp500=True or provide custom tickers")
@@ -105,6 +110,7 @@ def get_company_info(
         "beta",  # Historical volatility vs. market; helps size positions within a momentum overlay
     ]
 
+    logger.info(f"Fetching company info from yfinance for {len(tickers)} tickers")
     console.print(f"[blue]Fetching company info from yfinance for {len(tickers)} tickers...[/blue]")
 
     # Fetch data using yfinance
@@ -144,6 +150,7 @@ def get_company_info(
     output_file = os.path.join(output_dir, f"{file_name}_{date_str}.parquet")
 
     df.to_parquet(output_file, index=False)
+    logger.info(f"Company info saved to: {output_file} with shape {df.shape}")
     console.print(f"[green]Company info saved to: {output_file}[/green]")
     console.print(f"[cyan]DataFrame shape: {df.shape}[/cyan]")
 

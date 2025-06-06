@@ -5,7 +5,9 @@ from pydantic import Field
 from rich.console import Console
 
 from fundamentals.tools import get_statements_impl
+from fundamentals.utility.logging_config import get_logger
 
+logger = get_logger(__name__)
 console = Console()
 fun_mcp = FastMCP()
 
@@ -55,8 +57,8 @@ async def get_statements(
     """
     result = await get_statements_impl(ticker, form, date, statement, ctx)
     if date != result.get("date", date):
-        console.log(
-            f"[server.py] Date range adjusted from {date} to {result.get('date', date)} to avoid pre-2009 data "
+        logger.info(
+            f"Date range adjusted from {date} to {result.get('date', date)} to avoid pre-2009 data "
             "when XBRLS became mandated"
         )
     if not (isinstance(result, dict) and ("stitched_statement" in result or "error" in result)):
