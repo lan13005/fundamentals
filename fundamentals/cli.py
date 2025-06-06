@@ -335,7 +335,7 @@ def main():
 
     # set-log-level
     parser_log = subparsers.add_parser(
-        "set-log-level",
+        "logger",
         help="Set the global logging level for the fundamentals package",
         description="Set the global logging level that will be saved to .env file and used across all fundamentals modules.",
         add_help=False,
